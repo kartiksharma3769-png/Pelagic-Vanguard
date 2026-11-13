@@ -1,0 +1,6 @@
+{
+  "name": "Pelagic Vanguard",
+  "description": "A 60fps 3D deep-sea bioluminescent dogfighting combat game featuring handcrafted abyssal trench stages and multi-phase Leviathan boss encounters.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
