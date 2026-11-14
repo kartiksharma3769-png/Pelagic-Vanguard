@@ -30,17 +30,7 @@ export function getTodayDateKey(): string {
 }
 
 export function detectDefaultTouchControls(): boolean {
-  if (typeof window === 'undefined') return false;
-  const nav =
-    window.navigator ||
-    (typeof navigator !== 'undefined' ? navigator : undefined);
-  const ua = nav?.userAgent || '';
-  const isAndroidOrMobileTouch = /Android|iPhone|iPad|iPod/i.test(ua);
-  const isCoarsePointer =
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(pointer: coarse)').matches &&
-    (nav?.maxTouchPoints ?? 0) > 0;
-  return Boolean(isAndroidOrMobileTouch || isCoarsePointer);
+  return true;
 }
 
 export function createDefaultSettings(muted: boolean = false): GameSettings {
@@ -54,6 +44,8 @@ export function createDefaultSettings(muted: boolean = false): GameSettings {
     fpsCap: 60,
     cameraShakeIntensity: 80,
     aimAssist: true,
+    autoFire: true,
+    hapticsEnabled: true,
     reducedMotion: false,
     touchControlsEnabled: detectDefaultTouchControls(),
     touchLayout: 'standard',

@@ -666,7 +666,7 @@ export const MISSION_CATALOG: MissionDefinition[] = [
     briefing:
       'Complete interactive check-ins for 3D flight steering, primary cavitation cannons, Tactical Sonar hazard scanning, homing sonic torpedoes, and evasive barrel rolls.',
     primaryObjectiveText: 'Complete flight qualification drills & clear 6 target drones',
-    optionalObjectiveText: 'Trigger Tactical Sonar (Q) and perform a Barrel Roll (Space)',
+    optionalObjectiveText: 'Trigger Tactical Sonar and perform an Evade Roll',
     recommendedPower: 100,
     durationSeconds: 38,
     hasBossFinale: false,
@@ -725,7 +725,7 @@ export const MISSION_CATALOG: MissionDefinition[] = [
     briefing:
       'Protect the bathypelagic sonar relay beacon from incoming Nautilus Broadside Cruisers and Abyssal Mines until telemetry transmission completes.',
     primaryObjectiveText: 'Defend the Sonar Relay Beacon until transmission reaches 100%',
-    optionalObjectiveText: 'Use Tactical Sonar (Q) to expose minefields and cruisers',
+    optionalObjectiveText: 'Use Tactical Sonar to expose minefields and cruisers',
     recommendedPower: 130,
     durationSeconds: 48,
     hasBossFinale: false,
@@ -864,7 +864,7 @@ export const MISSION_CATALOG: MissionDefinition[] = [
     briefing:
       'Break through the Hadal threshold guarded by high-speed Phantom Manta squadrons and dense Abyssal Minefields at 10,100 meters depth.',
     primaryObjectiveText: 'Clear 15 Hadal defenders across the crystalline rift',
-    optionalObjectiveText: 'Use Tactical Sonar (Q) at least twice to dampen enemy volleys',
+    optionalObjectiveText: 'Use Tactical Sonar at least twice to dampen enemy volleys',
     recommendedPower: 320,
     durationSeconds: 56,
     hasBossFinale: false,

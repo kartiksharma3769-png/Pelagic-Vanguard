@@ -3,15 +3,15 @@ import {
   ArrowLeft,
   Check,
   Crosshair,
+  Eye,
   Flame,
+  Layers,
   Lock,
   Palette,
   RotateCcw,
   Shield,
   ShoppingBag,
   Sliders,
-  Sparkles,
-  Zap,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -137,6 +137,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
   onClose,
 }) => {
   const [category, setCategory] = useState<HangarCategory>('weapons');
+  const [isInspecting3D, setIsInspecting3D] = useState<boolean>(false);
   const [previewShipId, setPreviewShipId] = useState<ShipClassId>(
     save.selectedShip,
   );
@@ -164,6 +165,21 @@ export const HangarView: React.FC<HangarViewProps> = ({
     setPreviewCosmeticId(save.equippedCosmetic);
   }, [save.equippedCosmetic]);
 
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('pelagic-hangar-camera', {
+        detail: { action: isInspecting3D ? 'centerInspect' : 'splitInspect' },
+      }),
+    );
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent('pelagic-hangar-camera', {
+          detail: { action: 'splitInspect' },
+        }),
+      );
+    };
+  }, [isInspecting3D]);
+
   const sendCameraCommand = (
     action: 'zoomIn' | 'zoomOut' | 'resetView' | 'testThrusters',
   ) => {
@@ -174,12 +190,9 @@ export const HangarView: React.FC<HangarViewProps> = ({
 
   const currentShipDef =
     SHIP_CATALOG.find((s) => s.id === previewShipId) || SHIP_CATALOG[0];
-  const equippedShipDef =
-    SHIP_CATALOG.find((s) => s.id === save.selectedShip) || SHIP_CATALOG[0];
   const maxModuleSlots = currentShipDef.moduleCapacity;
   const fleetPower = calculateFleetPower(save);
 
-  // Split upgrades into offensive/tactical Modules vs structural/shield Defence
   const tacticalModules = useMemo(
     () =>
       UPGRADE_CATALOG.filter(
@@ -195,7 +208,6 @@ export const HangarView: React.FC<HangarViewProps> = ({
     [],
   );
 
-  // Baseline stats (currently equipped configuration)
   const currentStats = useMemo(
     () =>
       computeStatsForLoadout(
@@ -208,7 +220,6 @@ export const HangarView: React.FC<HangarViewProps> = ({
     [save],
   );
 
-  // Candidate stats based on currently inspected ship + inspected equipment item
   const candidateStats = useMemo(() => {
     let nextPrimary = save.equippedPrimaryWeapon;
     let nextSecondary = save.equippedSecondaryWeapon;
@@ -246,39 +257,39 @@ export const HangarView: React.FC<HangarViewProps> = ({
 
   const statRows = [
     {
-      label: 'Hull Armor',
-      unit: 'HP',
+      label: 'Hull',
+      unit: '',
       curr: currentStats.hull,
       next: candidateStats.hull,
       max: 220,
       color: 'bg-emerald-400',
     },
     {
-      label: 'Piezo Shield',
-      unit: 'SP',
+      label: 'Shield',
+      unit: '',
       curr: currentStats.shield,
       next: candidateStats.shield,
       max: 220,
       color: 'bg-cyan-400',
     },
     {
-      label: 'Combat Output',
-      unit: 'PWR',
+      label: 'Power',
+      unit: '',
       curr: currentStats.firepower,
       next: candidateStats.firepower,
       max: 220,
       color: 'bg-amber-400',
     },
     {
-      label: 'Hydro Speed',
-      unit: 'KT',
+      label: 'Speed',
+      unit: '',
       curr: currentStats.speed,
       next: candidateStats.speed,
       max: 32,
       color: 'bg-sky-400',
     },
     {
-      label: 'Torpedo Locks',
+      label: 'Locks',
       unit: '',
       curr: currentStats.locks,
       next: candidateStats.locks,
@@ -286,7 +297,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       color: 'bg-fuchsia-400',
     },
     {
-      label: 'Depth Rating',
+      label: 'Depth',
       unit: '%',
       curr: currentStats.pressureRes,
       next: candidateStats.pressureRes,
@@ -313,224 +324,349 @@ export const HangarView: React.FC<HangarViewProps> = ({
     save.salvageCredits >= currentShipDef.costCredits &&
     save.abyssalMaterials >= currentShipDef.costMaterials;
 
-  return (
-    <div className="relative h-full w-full flex flex-col lg:flex-row justify-between overflow-hidden pointer-events-none select-none">
-      {/* =====================================================================
-          LEFT 62% — INTERACTIVE 3D FIGHTER SHOWROOM (55-65% Screen Area)
-         ===================================================================== */}
-      <div className="lg:w-[62%] xl:w-[64%] h-full flex flex-col justify-between p-5 sm:p-8 pointer-events-none">
-        {/* Top Row: Ship Class, Name, Combat Role & Primary Hull Action */}
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="pointer-events-auto max-w-xl bg-gradient-to-r from-slate-950/88 via-slate-950/60 to-transparent pl-4 pr-8 py-3.5 rounded-r-2xl border-l-4 border-cyan-400">
-            <div className="flex items-center gap-2.5">
+  /* =======================================================================
+   * FULLSCREEN 3D SHIP INSPECTION VIEWPORT
+   * ===================================================================== */
+  if (isInspecting3D) {
+    return (
+      <div className="relative h-full w-full flex flex-col justify-between p-3 sm:p-5 pt-safe pb-safe px-safe pointer-events-none select-none overflow-hidden">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="pointer-events-auto rounded-2xl bg-slate-950/80 backdrop-blur-md ring-1 ring-white/15 px-3.5 py-2.5 shadow-xl max-w-xs sm:max-w-sm">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
               <span
-                className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded"
-                style={{
-                  color: currentShipDef.accentColor,
-                  backgroundColor: `${currentShipDef.accentColor}20`,
-                }}
+                className="font-semibold"
+                style={{ color: currentShipDef.accentColor }}
               >
-                {currentShipDef.classLabel} Class
+                {currentShipDef.classLabel}
               </span>
-              <span className="text-xs text-slate-300 font-medium">
-                {currentShipDef.subtitle}
-              </span>
-              <span className="font-mono text-xs text-cyan-300 font-bold">
-                · {fleetPower} PWR
+              <span aria-hidden="true">·</span>
+              <span className="font-mono text-cyan-300 font-bold tabular-nums">
+                {fleetPower} PWR
               </span>
             </div>
-
-            <h1 className="mt-1 text-2xl sm:text-4xl font-black tracking-tight text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.85)]">
+            <h1 className="font-display text-lg sm:text-xl font-bold text-white truncate">
               {currentShipDef.name}
             </h1>
-
-            <p className="mt-1 text-xs sm:text-sm text-slate-300/90 max-w-lg leading-relaxed">
-              {currentShipDef.description}
-            </p>
-
-            {/* Direct Hull Equip / Unlock Bar when inspecting another ship */}
-            <div className="mt-3 flex flex-wrap items-center gap-2.5">
+            <div className="mt-2 flex items-center gap-2">
               {shipOwned ? (
                 <button
                   onClick={() => onSelectShip(currentShipDef.id)}
-                  className={`rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  className={`min-h-[40px] rounded-xl px-3.5 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                     shipEquipped
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50'
-                      : 'bg-cyan-400 text-slate-950 hover:bg-cyan-300 shadow-[0_0_24px_rgba(6,182,212,0.4)]'
+                      ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/50'
+                      : 'bg-cyan-400 text-slate-950'
                   }`}
                 >
                   {shipEquipped ? (
                     <>
-                      <Check className="h-3.5 w-3.5" /> Active Flagship
+                      <Check className="h-3.5 w-3.5" /> Active
                     </>
                   ) : (
-                    'EQUIP FIGHTER HULL'
+                    'Deploy Hull'
                   )}
                 </button>
               ) : (
                 <button
                   onClick={() => onUnlockShip(currentShipDef.id)}
                   disabled={!canAffordShip}
-                  className={`rounded-xl px-4 py-2 text-xs font-bold transition flex items-center gap-1.5 ${
+                  className={`min-h-[40px] rounded-xl px-3.5 text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
                     canAffordShip
-                      ? 'bg-amber-400 text-slate-950 hover:bg-amber-300 shadow-[0_0_24px_rgba(245,158,11,0.4)] cursor-pointer'
-                      : 'bg-slate-900/90 text-slate-400 border border-white/10 cursor-not-allowed'
+                      ? 'bg-amber-400 text-slate-950 cursor-pointer'
+                      : 'bg-slate-900 text-slate-400 ring-1 ring-white/10 cursor-not-allowed'
                   }`}
                 >
                   <Lock className="h-3.5 w-3.5" />
-                  <span>
-                    UNLOCK HULL ({currentShipDef.costCredits} CR
-                    {currentShipDef.costMaterials > 0
-                      ? ` + ${currentShipDef.costMaterials} Alloy`
-                      : ''}
-                    )
-                  </span>
+                  <span>Unlock {currentShipDef.costCredits} CR</span>
                 </button>
               )}
-
-              <span className="text-xs font-mono text-cyan-300/90 bg-slate-950/75 px-3 py-1.5 rounded-lg border border-white/10">
-                {currentShipDef.tradeOffText}
-              </span>
             </div>
           </div>
 
-          {/* Interactive 3D Showroom Camera & Engine Controls */}
-          <div className="pointer-events-auto flex items-center gap-1.5 rounded-xl bg-slate-950/80 border border-white/10 p-1.5 shadow-lg">
+          <div className="pointer-events-auto flex items-center gap-1.5">
+            <div className="flex items-center gap-1 rounded-2xl bg-slate-950/80 backdrop-blur-md ring-1 ring-white/15 p-1">
+              <button
+                onClick={() => sendCameraCommand('zoomIn')}
+                aria-label="Zoom In"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => sendCameraCommand('zoomOut')}
+                aria-label="Zoom Out"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => sendCameraCommand('resetView')}
+                aria-label="Reset View"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => sendCameraCommand('testThrusters')}
+                aria-label="Ignite Thrusters"
+                className="flex min-h-[44px] min-w-[44px] sm:px-3 items-center justify-center gap-1.5 rounded-xl bg-cyan-500/20 text-cyan-200 active:scale-95 transition cursor-pointer"
+              >
+                <Flame className="h-4 w-4 text-cyan-300" />
+                <span className="hidden sm:inline text-xs font-semibold">
+                  Ignite
+                </span>
+              </button>
+            </div>
+
             <button
-              onClick={() => sendCameraCommand('zoomIn')}
-              title="Zoom In (or Scroll Wheel)"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white transition cursor-pointer"
+              onClick={() => setIsInspecting3D(false)}
+              className="min-h-[44px] inline-flex items-center gap-1.5 rounded-2xl bg-cyan-400 px-3.5 py-2 font-display text-xs font-bold text-slate-950 shadow-lg active:scale-95 transition cursor-pointer whitespace-nowrap"
             >
-              <ZoomIn className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => sendCameraCommand('zoomOut')}
-              title="Zoom Out (or Scroll Wheel)"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white transition cursor-pointer"
-            >
-              <ZoomOut className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => sendCameraCommand('resetView')}
-              title="Reset 3D Camera Angle"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white transition cursor-pointer"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </button>
-            <div className="h-4 w-px bg-white/10 mx-0.5" />
-            <button
-              onClick={() => sendCameraCommand('testThrusters')}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 px-2.5 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30 transition cursor-pointer"
-            >
-              <Flame className="h-3.5 w-3.5 text-cyan-300" />
-              <span>Engine Flare</span>
+              <Layers className="h-4 w-4" />
+              <span>Loadout</span>
             </button>
           </div>
         </div>
 
-        {/* Center 3D Viewport stays 100% open so the live ship dominates the screen */}
-        <div className="my-auto pointer-events-none flex items-center justify-start">
-          <div className="text-[11px] text-slate-400/80 bg-slate-950/55 px-3 py-1 rounded-full border border-white/5">
-            Drag to orbit 360° · Scroll wheel to zoom
+        <div className="my-auto pointer-events-none flex justify-center">
+          <div className="rounded-xl bg-slate-950/60 px-3 py-1 text-[11px] text-slate-300 ring-1 ring-white/10">
+            Swipe 360° · Pinch to Zoom
           </div>
         </div>
 
-        {/* Bottom Showroom Bar: 4-Ship Fleet Switcher + Compact Visual Stat Comparison */}
-        <div className="pointer-events-auto grid grid-cols-1 xl:grid-cols-12 gap-4 items-end">
-          {/* 4-Ship Interactive Dock */}
-          <div className="xl:col-span-7 bg-gradient-to-t from-slate-950/92 via-slate-950/80 to-slate-950/50 p-3 rounded-2xl border border-white/10">
-            <div className="flex items-center justify-between mb-2 px-1">
-              <span className="text-xs font-semibold text-slate-300">
-                Vanguard Submarine Fleet (Select to Switch 3D Hull)
-              </span>
-              <span className="font-mono text-[11px] text-cyan-300">
-                {save.ownedShips.length} / {SHIP_CATALOG.length} Hulls Unlocked
-              </span>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {SHIP_CATALOG.map((ship) => {
-                const isPreview = previewShipId === ship.id;
-                const isEquipped = save.selectedShip === ship.id;
-                const isOwned = save.ownedShips.includes(ship.id);
-                return (
-                  <button
-                    key={ship.id}
-                    onClick={() => setPreviewShipId(ship.id)}
-                    className={`group relative rounded-xl p-2.5 text-left transition cursor-pointer border ${
-                      isPreview
-                        ? 'bg-cyan-500/20 border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.25)]'
-                        : 'bg-slate-900/65 border-white/10 hover:border-white/25 hover:bg-slate-900/90'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span
-                        className="text-[10px] font-bold uppercase"
-                        style={{ color: ship.accentColor }}
-                      >
-                        {ship.classLabel}
-                      </span>
-                      {isEquipped ? (
-                        <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-                      ) : !isOwned ? (
-                        <Lock className="h-3 w-3 text-amber-400/80" />
-                      ) : null}
-                    </div>
-                    <div className="mt-1 text-xs font-bold text-white truncate">
+        <div className="pointer-events-auto flex flex-col sm:flex-row items-stretch sm:items-end justify-between gap-2">
+          <div className="flex-1 overflow-x-auto no-scrollbar rounded-2xl bg-slate-950/88 backdrop-blur-md ring-1 ring-white/15 p-2 flex gap-2">
+            {SHIP_CATALOG.map((ship) => {
+              const isPreview = previewShipId === ship.id;
+              const isEquipped = save.selectedShip === ship.id;
+              const isOwned = save.ownedShips.includes(ship.id);
+              return (
+                <button
+                  key={ship.id}
+                  onClick={() => setPreviewShipId(ship.id)}
+                  className={`min-h-[48px] min-w-[132px] flex-1 rounded-xl px-3 py-2 text-left transition cursor-pointer border shrink-0 ${
+                    isPreview
+                      ? 'bg-cyan-500/20 border-cyan-400 text-white'
+                      : 'bg-slate-900/70 border-white/10 text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1 text-xs font-bold">
+                    <span className="truncate">
                       {ship.name.replace('Vanguard ', '')}
-                    </div>
-                    <div className="mt-0.5 font-mono text-[10px] text-slate-400">
-                      {isEquipped
-                        ? 'Equipped'
-                        : isOwned
-                        ? 'Ready'
-                        : `${ship.costCredits} CR`}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                    </span>
+                    {isEquipped ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    ) : !isOwned ? (
+                      <Lock className="h-3 w-3 text-amber-400 shrink-0" />
+                    ) : null}
+                  </div>
+                  <div
+                    className="text-[10px] font-medium truncate"
+                    style={{ color: ship.accentColor }}
+                  >
+                    {ship.classLabel}
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
-          {/* Compact Visual Stat Comparison (Current vs Preview/Selected Item) */}
-          <div className="xl:col-span-5 bg-gradient-to-t from-slate-950/92 via-slate-950/80 to-slate-950/50 p-3.5 rounded-2xl border border-white/10">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-slate-300">
-                Current vs. Previewed Telemetry
-              </span>
-              <span className="font-mono text-[11px] text-emerald-300">
-                Slots: {save.activeUpgrades.length}/{maxModuleSlots}
+          <div className="rounded-2xl bg-slate-950/88 backdrop-blur-md ring-1 ring-white/15 p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {COSMETIC_CATALOG.map((cos) => {
+              const active = previewCosmeticId === cos.id;
+              return (
+                <button
+                  key={cos.id}
+                  onClick={() => setPreviewCosmeticId(cos.id)}
+                  className={`min-h-[44px] min-w-[44px] rounded-xl border p-1.5 flex items-center justify-center transition cursor-pointer shrink-0 ${
+                    active
+                      ? 'border-cyan-400 bg-cyan-500/20 scale-105'
+                      : 'border-white/10 bg-slate-900/60'
+                  }`}
+                >
+                  <span
+                    className="h-6 w-6 rounded-full border border-white/40"
+                    style={{ backgroundColor: cos.accentHex }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* =======================================================================
+   * MOBILE HANGAR: UPPER LIVE 3D STAGE + BOTTOM/SIDE SLIDE-UP SHEET
+   * ===================================================================== */
+  return (
+    <div className="pointer-events-none relative h-full w-full flex flex-col justify-between select-none overflow-hidden">
+      {/* Top Floating Bar over Live 3D Ship */}
+      <div className="pointer-events-auto relative z-20 flex items-center justify-between gap-2 bg-gradient-to-b from-slate-950/90 via-slate-950/55 to-transparent px-3 sm:px-5 pt-2.5 pb-4 pt-safe px-safe">
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            onClick={onClose}
+            className="min-h-[44px] inline-flex items-center gap-1.5 rounded-2xl bg-slate-950/80 ring-1 ring-white/15 px-3 text-xs font-semibold text-slate-200 active:scale-95 transition cursor-pointer shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Berth</span>
+          </button>
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-[11px] text-cyan-400 font-medium">
+              <span>Hangar</span>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono text-emerald-300 tabular-nums">
+                {fleetPower} PWR
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+            <h2 className="font-display text-sm sm:text-lg font-bold text-white truncate">
+              {currentShipDef.name}
+            </h2>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="hidden sm:flex min-h-[44px] items-center gap-2 rounded-2xl bg-slate-950/80 ring-1 ring-white/15 px-3 font-mono text-xs tabular-nums">
+            <span className="text-amber-300 font-bold">
+              {save.salvageCredits.toLocaleString()} CR
+            </span>
+            <span className="text-fuchsia-300 font-bold">
+              {save.abyssalMaterials} AL
+            </span>
+          </div>
+
+          <button
+            onClick={() => sendCameraCommand('testThrusters')}
+            aria-label="Ignite Thrusters"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-2xl bg-cyan-500/20 ring-1 ring-cyan-400/45 text-cyan-200 active:scale-95 transition cursor-pointer"
+          >
+            <Flame className="h-4 w-4" />
+          </button>
+
+          <button
+            onClick={() => setIsInspecting3D(true)}
+            className="min-h-[44px] inline-flex items-center gap-1.5 rounded-2xl bg-cyan-500/20 ring-1 ring-cyan-400/50 px-3 text-xs font-bold text-cyan-200 active:scale-95 transition cursor-pointer whitespace-nowrap"
+          >
+            <Eye className="h-4 w-4" />
+            <span>3D View</span>
+          </button>
+
+          <button
+            onClick={onOpenMarket}
+            className="min-h-[44px] inline-flex items-center gap-1.5 rounded-2xl bg-amber-500/20 ring-1 ring-amber-400/45 px-3 text-xs font-bold text-amber-200 active:scale-95 transition cursor-pointer whitespace-nowrap"
+          >
+            <ShoppingBag className="h-4 w-4" />
+            <span className="hidden xs:inline">Shop</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Responsive Container: Top space stays transparent on Portrait for 3D ship */}
+      <div className="flex-1 flex flex-col lg:flex-row lg:items-end lg:justify-end overflow-hidden pointer-events-none">
+        {/* Transparent 3D Showcase Touch Window (clicks/swipes go directly to 3D Canvas) */}
+        <div className="flex-1 min-h-[22dvh] pointer-events-none flex items-end justify-center pb-2">
+          <span className="rounded-xl bg-slate-950/50 px-2.5 py-1 text-[10px] text-slate-300/80 ring-1 ring-white/10">
+            Drag Ship to Rotate · Pinch Zoom
+          </span>
+        </div>
+
+        {/* Slide-Up Mobile Sheet (Bottom on Portrait/Compact, Right Drawer on Wide Landscape) */}
+        <div className="pointer-events-auto animate-panel-up w-full lg:w-[540px] lg:h-[calc(100%-12px)] lg:mr-4 lg:mb-3 max-h-[68dvh] lg:max-h-none flex flex-col rounded-t-3xl lg:rounded-3xl bg-slate-950/92 backdrop-blur-xl border-t lg:border border-white/15 shadow-[0_-18px_50px_rgba(0,0,0,0.85)] overflow-hidden">
+          {/* Drag Handle + Ship Switcher Strip */}
+          <div className="px-3 pt-2.5 pb-2 border-b border-white/10 space-y-2 shrink-0">
+            <div className="mx-auto h-1 w-10 rounded-full bg-white/20 lg:hidden" />
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1 flex gap-1.5 overflow-x-auto no-scrollbar snap-x">
+                {SHIP_CATALOG.map((ship) => {
+                  const isPreview = previewShipId === ship.id;
+                  const isEquipped = save.selectedShip === ship.id;
+                  const isOwned = save.ownedShips.includes(ship.id);
+                  return (
+                    <button
+                      key={ship.id}
+                      onClick={() => setPreviewShipId(ship.id)}
+                      className={`snap-start min-h-[44px] min-w-[116px] rounded-xl px-2.5 py-1.5 text-left transition cursor-pointer border shrink-0 flex items-center justify-between gap-2 ${
+                        isPreview
+                          ? 'bg-cyan-500/20 border-cyan-400 text-white'
+                          : 'bg-slate-900/75 border-white/10 text-slate-300'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold truncate">
+                          {ship.name.replace('Vanguard ', '')}
+                        </div>
+                        <div
+                          className="text-[10px] font-medium truncate"
+                          style={{ color: ship.accentColor }}
+                        >
+                          {ship.classLabel}
+                        </div>
+                      </div>
+                      {isEquipped ? (
+                        <Check className="h-3.5 w-3.5 text-emerald-300 shrink-0" />
+                      ) : !isOwned ? (
+                        <Lock className="h-3 w-3 text-amber-300 shrink-0" />
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {shipOwned ? (
+                <button
+                  onClick={() => onSelectShip(currentShipDef.id)}
+                  className={`min-h-[44px] shrink-0 rounded-xl px-3.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                    shipEquipped
+                      ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/40'
+                      : 'bg-cyan-400 text-slate-950'
+                  }`}
+                >
+                  {shipEquipped ? 'Deployed' : 'Deploy'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => onUnlockShip(currentShipDef.id)}
+                  disabled={!canAffordShip}
+                  className={`min-h-[44px] shrink-0 rounded-xl px-3 text-xs font-bold transition whitespace-nowrap ${
+                    canAffordShip
+                      ? 'bg-amber-400 text-slate-950 cursor-pointer'
+                      : 'bg-slate-900 text-slate-500 ring-1 ring-white/10 cursor-not-allowed'
+                  }`}
+                >
+                  {currentShipDef.costCredits} CR
+                </button>
+              )}
+            </div>
+
+            {/* Compact 6-Stat Mini Bar */}
+            <div className="grid grid-cols-6 gap-1.5 pt-0.5">
               {statRows.map((row) => {
                 const delta = +(row.next - row.curr).toFixed(1);
                 return (
-                  <div key={row.label} className="text-xs">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[11px] text-slate-400">
+                  <div key={row.label} className="min-w-0">
+                    <div className="flex items-baseline justify-between text-[10px]">
+                      <span className="text-slate-400 truncate">
                         {row.label}
                       </span>
-                      <div className="font-mono text-[11px] flex items-center gap-1">
-                        <span className="font-bold text-white">
-                          {row.next}
-                          {row.unit}
-                        </span>
-                        {delta !== 0 && (
-                          <span
-                            className={
-                              delta > 0
-                                ? 'text-emerald-400 font-bold'
-                                : 'text-rose-400 font-bold'
-                            }
-                          >
-                            ({delta > 0 ? `+${delta}` : delta})
-                          </span>
-                        )}
-                      </div>
                     </div>
-                    <div className="relative h-1.5 w-full rounded-full bg-slate-800 overflow-hidden">
+                    <div className="font-mono text-[11px] font-bold text-white tabular-nums truncate">
+                      {row.next}
+                      {row.unit}
+                      {delta !== 0 && (
+                        <span
+                          className={`ml-0.5 text-[9px] ${
+                            delta > 0 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {delta > 0 ? `+${delta}` : delta}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 h-1 w-full rounded-full bg-slate-800 overflow-hidden">
                       <div
-                        className={`h-full ${row.color} transition-all duration-300`}
+                        className={`h-full ${row.color} transition-all duration-200`}
                         style={{
                           width: `${Math.min(100, (row.next / row.max) * 100)}%`,
                         }}
@@ -540,324 +676,39 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 );
               })}
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* =====================================================================
-          RIGHT 38% — MASTER-DETAIL EQUIPMENT & LOADOUT INSPECTOR
-         ===================================================================== */}
-      <div className="pointer-events-auto w-full lg:w-[38%] xl:w-[36%] h-full bg-gradient-to-l from-slate-950/96 via-slate-950/92 to-slate-950/75 border-l border-white/10 flex flex-col justify-between p-5 sm:p-6 overflow-y-auto">
-        <div>
-          {/* Top Bar */}
-          <div className="flex items-center justify-between gap-3 pb-3.5 border-b border-white/10">
-            <div>
-              <div className="text-xs font-medium text-cyan-400">
-                Submersible Loadout Bay
-              </div>
-              <h2 className="text-lg sm:text-xl font-bold text-white">
-                Equipment & Tuning
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onOpenMarket}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 border border-amber-400/35 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/25 transition cursor-pointer"
-              >
-                <ShoppingBag className="h-3.5 w-3.5" />
-                Market
-              </button>
-              <button
-                onClick={onClose}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10 hover:text-white transition cursor-pointer"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Berth
-              </button>
+            {/* 4 Category Tabs */}
+            <div className="grid grid-cols-4 gap-1 rounded-2xl bg-slate-900/90 p-1 ring-1 ring-white/10">
+              {(
+                [
+                  { id: 'weapons', label: 'Weapons', icon: Crosshair },
+                  { id: 'modules', label: 'Modules', icon: Sliders },
+                  { id: 'defence', label: 'Defence', icon: Shield },
+                  { id: 'cosmetics', label: 'Paint', icon: Palette },
+                ] as const
+              ).map((tab) => {
+                const Icon = tab.icon;
+                const active = category === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setCategory(tab.id)}
+                    className={`min-h-[40px] flex items-center justify-center gap-1 rounded-xl px-1.5 text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
+                      active
+                        ? 'bg-cyan-400 text-slate-950 font-bold'
+                        : 'text-slate-300'
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{tab.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* 4 Separate Equipment Navigation Tabs: Weapons, Modules, Defence, Cosmetics */}
-          <div className="grid grid-cols-4 gap-1 my-4 rounded-xl bg-slate-900/90 p-1 border border-white/10">
-            {(
-              [
-                { id: 'weapons', label: 'Weapons', icon: Crosshair },
-                { id: 'modules', label: 'Modules', icon: Sliders },
-                { id: 'defence', label: 'Defence', icon: Shield },
-                { id: 'cosmetics', label: 'Cosmetics', icon: Palette },
-              ] as const
-            ).map((tab) => {
-              const Icon = tab.icon;
-              const active = category === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setCategory(tab.id)}
-                  className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition cursor-pointer ${
-                    active
-                      ? 'bg-cyan-400 text-slate-950 font-bold shadow-sm'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* SELECTED ITEM DETAIL PANEL (High-Impact Visual Inspector) */}
-          <div className="rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-slate-900/95 via-slate-950 to-slate-950 p-4 mb-4 shadow-inner">
-            {category === 'weapons' && (
-              <div>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <span className="text-[11px] font-semibold uppercase text-cyan-400">
-                      {activeWeaponDetail.slot === 'primary'
-                        ? 'Primary Acoustic Cannon'
-                        : 'Heavy Torpedo Bay'}{' '}
-                      · {activeWeaponDetail.shortTag}
-                    </span>
-                    <h3 className="text-lg font-bold text-white mt-0.5">
-                      {activeWeaponDetail.name}
-                    </h3>
-                  </div>
-                  <span className="rounded-lg bg-cyan-500/15 border border-cyan-400/30 px-2.5 py-1 font-mono text-xs font-bold text-cyan-300">
-                    {activeWeaponDetail.statSummary}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs text-slate-300 leading-relaxed">
-                  {activeWeaponDetail.description}
-                </p>
-
-                {/* Weapon Stat Breakdown */}
-                <div className="mt-3 grid grid-cols-3 gap-2 pt-3 border-t border-white/10 font-mono text-xs">
-                  <div>
-                    <div className="text-[10px] text-slate-400">Damage</div>
-                    <div className="text-white font-bold">
-                      {activeWeaponDetail.damage} DMG
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-slate-400">Cycle Rate</div>
-                    <div className="text-cyan-300 font-bold">
-                      {activeWeaponDetail.cooldownSeconds}s
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-slate-400">Velocity</div>
-                    <div className="text-emerald-300 font-bold">
-                      {activeWeaponDetail.projectileSpeed} m/s
-                    </div>
-                  </div>
-                </div>
-
-                {/* Prominent EQUIP / UNLOCK CTA */}
-                <div className="mt-4">
-                  {save.ownedWeapons.includes(activeWeaponDetail.id) ? (
-                    <button
-                      onClick={() =>
-                        activeWeaponDetail.slot === 'primary'
-                          ? onSelectPrimaryWeapon(
-                              activeWeaponDetail.id as PrimaryWeaponId,
-                            )
-                          : onSelectSecondaryWeapon(
-                              activeWeaponDetail.id as SecondaryWeaponId,
-                            )
-                      }
-                      className={`w-full rounded-xl py-2.5 text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
-                        save.equippedPrimaryWeapon === activeWeaponDetail.id ||
-                        save.equippedSecondaryWeapon === activeWeaponDetail.id
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50'
-                          : 'bg-cyan-400 text-slate-950 hover:bg-cyan-300 shadow-[0_0_24px_rgba(6,182,212,0.35)]'
-                      }`}
-                    >
-                      {save.equippedPrimaryWeapon === activeWeaponDetail.id ||
-                      save.equippedSecondaryWeapon === activeWeaponDetail.id
-                        ? '✓ EQUIPPED IN ACTIVE BAY'
-                        : `EQUIP ${activeWeaponDetail.name.toUpperCase()}`}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={onOpenMarket}
-                      className="w-full rounded-xl bg-amber-400 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-950 hover:bg-amber-300 transition cursor-pointer"
-                    >
-                      UNLOCK IN MARKET ({activeWeaponDetail.costCredits} CR)
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {(category === 'modules' || category === 'defence') && (
-              <div>
-                {(() => {
-                  const owned = save.ownedUpgrades.includes(
-                    activeModuleDetail.id,
-                  );
-                  const equipped = save.activeUpgrades.includes(
-                    activeModuleDetail.id,
-                  );
-                  const tier = save.upgradeTiers[activeModuleDetail.id] || 1;
-                  const upgradeCostCr = Math.round(
-                    activeModuleDetail.cost * 0.65 * tier,
-                  );
-                  const upgradeCostMat = tier;
-                  const canTune =
-                    owned &&
-                    tier < 3 &&
-                    save.salvageCredits >= upgradeCostCr &&
-                    save.abyssalMaterials >= upgradeCostMat;
-
-                  return (
-                    <>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <span className="text-[11px] font-semibold uppercase text-cyan-400">
-                            {category === 'defence'
-                              ? 'Defensive & Hull System'
-                              : 'Tactical Sub-Module'}{' '}
-                            · Tier {owned ? tier : 1}/3
-                          </span>
-                          <h3 className="text-lg font-bold text-white mt-0.5">
-                            {activeModuleDetail.name}
-                          </h3>
-                        </div>
-                        <span className="rounded-lg bg-emerald-500/15 border border-emerald-400/30 px-2.5 py-1 font-mono text-xs font-bold text-emerald-300">
-                          {activeModuleDetail.statSummary}
-                        </span>
-                      </div>
-
-                      <p className="mt-2 text-xs text-slate-300 leading-relaxed">
-                        {activeModuleDetail.description}
-                      </p>
-
-                      {/* Visual Tier Track */}
-                      <div className="mt-3 grid grid-cols-3 gap-1.5 pt-3 border-t border-white/10">
-                        {[1, 2, 3].map((t) => (
-                          <div
-                            key={t}
-                            className={`rounded-lg px-2.5 py-1.5 text-center font-mono text-[11px] border ${
-                              owned && tier >= t
-                                ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-200 font-bold'
-                                : 'border-white/5 bg-slate-900/60 text-slate-500'
-                            }`}
-                          >
-                            Tier {t} {t === 1 ? 'Base' : t === 2 ? '+25%' : '+50%'}
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Prominent EQUIP / UPGRADE / UNLOCK Actions */}
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {owned ? (
-                          <>
-                            <button
-                              onClick={() =>
-                                onToggleUpgrade(activeModuleDetail.id)
-                              }
-                              className={`flex-1 rounded-xl py-2.5 px-3 text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
-                                equipped
-                                  ? 'bg-slate-800 text-slate-200 border border-white/15 hover:bg-slate-700'
-                                  : save.activeUpgrades.length >= maxModuleSlots
-                                  ? 'bg-slate-900 text-slate-500 cursor-not-allowed'
-                                  : 'bg-cyan-400 text-slate-950 hover:bg-cyan-300 shadow-[0_0_20px_rgba(6,182,212,0.35)]'
-                              }`}
-                            >
-                              {equipped
-                                ? 'UNEQUIP MODULE'
-                                : save.activeUpgrades.length >= maxModuleSlots
-                                ? `SLOTS FULL (${maxModuleSlots}/${maxModuleSlots})`
-                                : 'EQUIP MODULE'}
-                            </button>
-
-                            {tier < 3 && (
-                              <button
-                                onClick={() =>
-                                  onUpgradeTier(activeModuleDetail.id)
-                                }
-                                disabled={!canTune}
-                                className={`rounded-xl px-3.5 py-2.5 text-xs font-bold uppercase tracking-wider transition ${
-                                  canTune
-                                    ? 'bg-fuchsia-400 text-slate-950 hover:bg-fuchsia-300 cursor-pointer'
-                                    : 'bg-slate-900 text-slate-500 border border-white/10 cursor-not-allowed'
-                                }`}
-                              >
-                                UPGRADE T{tier + 1} ({upgradeCostCr} CR +{' '}
-                                {upgradeCostMat}M)
-                              </button>
-                            )}
-                          </>
-                        ) : (
-                          <button
-                            onClick={onOpenMarket}
-                            className="w-full rounded-xl bg-amber-400 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-950 hover:bg-amber-300 transition cursor-pointer"
-                          >
-                            UNLOCK IN MARKET ({activeModuleDetail.cost} CR)
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            )}
-
-            {category === 'cosmetics' && (
-              <div>
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <span className="text-[11px] font-semibold uppercase text-fuchsia-400">
-                      Bioluminescent Hull Trim · {activeCosmeticDetail.shortTag}
-                    </span>
-                    <h3 className="text-lg font-bold text-white mt-0.5">
-                      {activeCosmeticDetail.name}
-                    </h3>
-                  </div>
-                  <div
-                    className="h-10 w-10 rounded-full border-2 border-white/30 shadow-lg shrink-0"
-                    style={{ backgroundColor: activeCosmeticDetail.accentHex }}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-slate-300 leading-relaxed">
-                  {activeCosmeticDetail.description}
-                </p>
-                <div className="mt-4">
-                  {save.ownedCosmetics.includes(activeCosmeticDetail.id) ? (
-                    <button
-                      onClick={() => onSelectCosmetic(activeCosmeticDetail.id)}
-                      className={`w-full rounded-xl py-2.5 text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
-                        save.equippedCosmetic === activeCosmeticDetail.id
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50'
-                          : 'bg-cyan-400 text-slate-950 hover:bg-cyan-300'
-                      }`}
-                    >
-                      {save.equippedCosmetic === activeCosmeticDetail.id
-                        ? '✓ ACTIVE HULL LIVERY'
-                        : 'EQUIP LIVERY'}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => onUnlockCosmetic(activeCosmeticDetail.id)}
-                      disabled={
-                        save.salvageCredits < activeCosmeticDetail.costCredits
-                      }
-                      className={`w-full rounded-xl py-2.5 text-xs font-bold uppercase tracking-wider transition ${
-                        save.salvageCredits >= activeCosmeticDetail.costCredits
-                          ? 'bg-amber-400 text-slate-950 hover:bg-amber-300 cursor-pointer'
-                          : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                      }`}
-                    >
-                      UNLOCK LIVERY ({activeCosmeticDetail.costCredits} CR)
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* SLEEK EQUIPMENT SELECTION LIST (No Card Wall Clutter) */}
-          <div className="space-y-1.5">
+          {/* Scrollable Item Grid */}
+          <div className="flex-1 overflow-y-auto px-3 py-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start">
             {category === 'weapons' &&
               WEAPON_CATALOG.map((w) => {
                 const isSelected = selectedWeaponId === w.id;
@@ -867,49 +718,34 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 const isOwned = save.ownedWeapons.includes(w.id);
 
                 return (
-                  <div
+                  <button
                     key={w.id}
                     onClick={() => setSelectedWeaponId(w.id)}
-                    className={`rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-3 transition cursor-pointer border-l-4 ${
+                    className={`min-h-[56px] rounded-2xl p-3 text-left flex items-center justify-between gap-2 transition cursor-pointer border ${
                       isSelected
-                        ? 'border-l-cyan-400 bg-cyan-500/15 text-white'
-                        : 'border-l-transparent bg-slate-900/45 text-slate-300 hover:bg-slate-900/75'
+                        ? 'border-cyan-400 bg-cyan-500/15 text-white'
+                        : 'border-white/10 bg-slate-900/65 text-slate-300'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: w.accentColor }}
-                      />
-                      <div className="truncate">
-                        <div className="text-xs font-bold text-white truncate">
-                          {w.name}
-                        </div>
-                        <div className="text-[11px] text-slate-400">
-                          {w.slot === 'primary'
-                            ? 'Primary Cannon'
-                            : 'Heavy Torpedo'}{' '}
-                          · {w.statSummary}
-                        </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-white truncate">
+                        {w.name}
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate">
+                        {w.slot === 'primary' ? 'Primary' : 'Torpedo'} ·{' '}
+                        {w.statSummary}
                       </div>
                     </div>
-
-                    <div className="shrink-0 flex items-center gap-2">
+                    <div className="shrink-0 font-mono text-[11px] font-bold tabular-nums">
                       {isEquipped ? (
-                        <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                          EQUIPPED
-                        </span>
+                        <span className="text-emerald-300">ON</span>
                       ) : isOwned ? (
-                        <span className="text-[11px] font-mono text-cyan-300">
-                          OWNED
-                        </span>
+                        <span className="text-cyan-300">OWNED</span>
                       ) : (
-                        <span className="text-[11px] font-mono text-amber-300">
-                          {w.costCredits} CR
-                        </span>
+                        <span className="text-amber-300">{w.costCredits} CR</span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
 
@@ -921,45 +757,33 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 const tier = save.upgradeTiers[upg.id] || 1;
 
                 return (
-                  <div
+                  <button
                     key={upg.id}
                     onClick={() => setSelectedModuleId(upg.id)}
-                    className={`rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-3 transition cursor-pointer border-l-4 ${
+                    className={`min-h-[56px] rounded-2xl p-3 text-left flex items-center justify-between gap-2 transition cursor-pointer border ${
                       isSelected
-                        ? 'border-l-cyan-400 bg-cyan-500/15 text-white'
-                        : 'border-l-transparent bg-slate-900/45 text-slate-300 hover:bg-slate-900/75'
+                        ? 'border-cyan-400 bg-cyan-500/15 text-white'
+                        : 'border-white/10 bg-slate-900/65 text-slate-300'
                     }`}
                   >
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-white truncate">
                         {upg.name}
                       </div>
-                      <div className="text-[11px] text-slate-400">
+                      <div className="text-[11px] text-slate-400 truncate">
                         {upg.statSummary}
                       </div>
                     </div>
-
-                    <div className="shrink-0 flex items-center gap-2">
-                      {isOwned && (
-                        <span className="font-mono text-[10px] text-cyan-300">
-                          T{tier}
-                        </span>
-                      )}
+                    <div className="shrink-0 font-mono text-[11px] font-bold tabular-nums">
                       {isEquipped ? (
-                        <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                          EQUIPPED
-                        </span>
+                        <span className="text-emerald-300">T{tier} ON</span>
                       ) : isOwned ? (
-                        <span className="text-[11px] font-mono text-slate-300">
-                          READY
-                        </span>
+                        <span className="text-cyan-300">T{tier}</span>
                       ) : (
-                        <span className="text-[11px] font-mono text-amber-300">
-                          {upg.cost} CR
-                        </span>
+                        <span className="text-amber-300">{upg.cost} CR</span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
 
@@ -971,45 +795,33 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 const tier = save.upgradeTiers[upg.id] || 1;
 
                 return (
-                  <div
+                  <button
                     key={upg.id}
                     onClick={() => setSelectedDefenceId(upg.id)}
-                    className={`rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-3 transition cursor-pointer border-l-4 ${
+                    className={`min-h-[56px] rounded-2xl p-3 text-left flex items-center justify-between gap-2 transition cursor-pointer border ${
                       isSelected
-                        ? 'border-l-cyan-400 bg-cyan-500/15 text-white'
-                        : 'border-l-transparent bg-slate-900/45 text-slate-300 hover:bg-slate-900/75'
+                        ? 'border-cyan-400 bg-cyan-500/15 text-white'
+                        : 'border-white/10 bg-slate-900/65 text-slate-300'
                     }`}
                   >
                     <div className="min-w-0">
                       <div className="text-xs font-bold text-white truncate">
                         {upg.name}
                       </div>
-                      <div className="text-[11px] text-slate-400">
+                      <div className="text-[11px] text-slate-400 truncate">
                         {upg.statSummary}
                       </div>
                     </div>
-
-                    <div className="shrink-0 flex items-center gap-2">
-                      {isOwned && (
-                        <span className="font-mono text-[10px] text-cyan-300">
-                          T{tier}
-                        </span>
-                      )}
+                    <div className="shrink-0 font-mono text-[11px] font-bold tabular-nums">
                       {isEquipped ? (
-                        <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                          EQUIPPED
-                        </span>
+                        <span className="text-emerald-300">T{tier} ON</span>
                       ) : isOwned ? (
-                        <span className="text-[11px] font-mono text-slate-300">
-                          READY
-                        </span>
+                        <span className="text-cyan-300">T{tier}</span>
                       ) : (
-                        <span className="text-[11px] font-mono text-amber-300">
-                          {upg.cost} CR
-                        </span>
+                        <span className="text-amber-300">{upg.cost} CR</span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
 
@@ -1020,63 +832,218 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 const isOwned = save.ownedCosmetics.includes(cos.id);
 
                 return (
-                  <div
+                  <button
                     key={cos.id}
                     onClick={() => setPreviewCosmeticId(cos.id)}
-                    className={`rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-3 transition cursor-pointer border-l-4 ${
+                    className={`min-h-[56px] rounded-2xl p-3 text-left flex items-center justify-between gap-2 transition cursor-pointer border ${
                       isSelected
-                        ? 'border-l-cyan-400 bg-cyan-500/15 text-white'
-                        : 'border-l-transparent bg-slate-900/45 text-slate-300 hover:bg-slate-900/75'
+                        ? 'border-cyan-400 bg-cyan-500/15 text-white'
+                        : 'border-white/10 bg-slate-900/65 text-slate-300'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <span
-                        className="h-4 w-4 rounded-full border border-white/30"
+                        className="h-5 w-5 rounded-full border border-white/30 shrink-0"
                         style={{ backgroundColor: cos.accentHex }}
                       />
-                      <div>
-                        <div className="text-xs font-bold text-white">
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white truncate">
                           {cos.name}
                         </div>
-                        <div className="text-[11px] text-slate-400">
+                        <div className="text-[11px] text-slate-400 truncate">
                           {cos.shortTag}
                         </div>
                       </div>
                     </div>
-
-                    <div>
+                    <div className="shrink-0 font-mono text-[11px] font-bold tabular-nums">
                       {isEquipped ? (
-                        <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                          EQUIPPED
-                        </span>
+                        <span className="text-emerald-300">ON</span>
                       ) : isOwned ? (
-                        <span className="text-[11px] font-mono text-cyan-300">
-                          OWNED
-                        </span>
+                        <span className="text-cyan-300">OWNED</span>
                       ) : (
-                        <span className="text-[11px] font-mono text-amber-300">
+                        <span className="text-amber-300">
                           {cos.costCredits} CR
                         </span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
           </div>
-        </div>
 
-        {/* Footer Confirm Loadout CTA */}
-        <div className="mt-5 pt-3.5 border-t border-white/10 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
-            <Sparkles className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-            <span>Loadout auto-saves to active ship</span>
+          {/* Sticky Bottom Inspector + Action CTA Bar */}
+          <div className="shrink-0 border-t border-white/10 bg-slate-950/95 px-3 pt-2.5 pb-3 pb-safe space-y-2">
+            {category === 'weapons' && (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold text-cyan-400 truncate">
+                      {activeWeaponDetail.name} · {activeWeaponDetail.damage} DMG
+                      · {activeWeaponDetail.cooldownSeconds}s CD
+                    </div>
+                    <div className="text-[11px] text-slate-300 truncate">
+                      {activeWeaponDetail.description}
+                    </div>
+                  </div>
+                </div>
+                {save.ownedWeapons.includes(activeWeaponDetail.id) ? (
+                  <button
+                    onClick={() =>
+                      activeWeaponDetail.slot === 'primary'
+                        ? onSelectPrimaryWeapon(
+                            activeWeaponDetail.id as PrimaryWeaponId,
+                          )
+                        : onSelectSecondaryWeapon(
+                            activeWeaponDetail.id as SecondaryWeaponId,
+                          )
+                    }
+                    className={`min-h-[48px] w-full rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+                      save.equippedPrimaryWeapon === activeWeaponDetail.id ||
+                      save.equippedSecondaryWeapon === activeWeaponDetail.id
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50'
+                        : 'bg-cyan-400 text-slate-950 active:scale-[0.99]'
+                    }`}
+                  >
+                    {save.equippedPrimaryWeapon === activeWeaponDetail.id ||
+                    save.equippedSecondaryWeapon === activeWeaponDetail.id
+                      ? 'Equipped in Active Bay'
+                      : `Equip ${activeWeaponDetail.name}`}
+                  </button>
+                ) : (
+                  <button
+                    onClick={onOpenMarket}
+                    className="min-h-[48px] w-full rounded-2xl bg-amber-400 text-xs sm:text-sm font-bold text-slate-950 active:scale-[0.99] transition cursor-pointer"
+                  >
+                    Unlock in Market ({activeWeaponDetail.costCredits} CR)
+                  </button>
+                )}
+              </>
+            )}
+
+            {(category === 'modules' || category === 'defence') &&
+              (() => {
+                const owned = save.ownedUpgrades.includes(activeModuleDetail.id);
+                const equipped = save.activeUpgrades.includes(
+                  activeModuleDetail.id,
+                );
+                const tier = save.upgradeTiers[activeModuleDetail.id] || 1;
+                const upgradeCostCr = Math.round(
+                  activeModuleDetail.cost * 0.65 * tier,
+                );
+                const upgradeCostMat = tier;
+                const canTune =
+                  owned &&
+                  tier < 3 &&
+                  save.salvageCredits >= upgradeCostCr &&
+                  save.abyssalMaterials >= upgradeCostMat;
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold text-cyan-400 truncate">
+                          {activeModuleDetail.name} · Tier {owned ? tier : 1}/3 ·
+                          Slots {save.activeUpgrades.length}/{maxModuleSlots}
+                        </div>
+                        <div className="text-[11px] text-slate-300 truncate">
+                          {activeModuleDetail.description}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {owned ? (
+                        <>
+                          <button
+                            onClick={() =>
+                              onToggleUpgrade(activeModuleDetail.id)
+                            }
+                            className={`min-h-[48px] flex-1 rounded-2xl px-3 text-xs font-bold transition cursor-pointer ${
+                              equipped
+                                ? 'bg-slate-800 text-slate-200 border border-white/15'
+                                : save.activeUpgrades.length >= maxModuleSlots
+                                  ? 'bg-slate-900 text-slate-500 cursor-not-allowed'
+                                  : 'bg-cyan-400 text-slate-950'
+                            }`}
+                          >
+                            {equipped
+                              ? 'Unequip'
+                              : save.activeUpgrades.length >= maxModuleSlots
+                                ? `Full (${maxModuleSlots})`
+                                : 'Equip Module'}
+                          </button>
+
+                          {tier < 3 && (
+                            <button
+                              onClick={() =>
+                                onUpgradeTier(activeModuleDetail.id)
+                              }
+                              disabled={!canTune}
+                              className={`min-h-[48px] flex-1 rounded-2xl px-3 text-xs font-bold transition ${
+                                canTune
+                                  ? 'bg-fuchsia-400 text-slate-950 cursor-pointer'
+                                  : 'bg-slate-900 text-slate-500 border border-white/10 cursor-not-allowed'
+                              }`}
+                            >
+                              T{tier + 1} ({upgradeCostCr} CR + {upgradeCostMat}M)
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <button
+                          onClick={onOpenMarket}
+                          className="min-h-[48px] w-full rounded-2xl bg-amber-400 text-xs sm:text-sm font-bold text-slate-950 cursor-pointer"
+                        >
+                          Unlock in Market ({activeModuleDetail.cost} CR)
+                        </button>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+
+            {category === 'cosmetics' && (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold text-fuchsia-400 truncate">
+                      {activeCosmeticDetail.name} · {activeCosmeticDetail.shortTag}
+                    </div>
+                    <div className="text-[11px] text-slate-300 truncate">
+                      {activeCosmeticDetail.description}
+                    </div>
+                  </div>
+                </div>
+                {save.ownedCosmetics.includes(activeCosmeticDetail.id) ? (
+                  <button
+                    onClick={() => onSelectCosmetic(activeCosmeticDetail.id)}
+                    className={`min-h-[48px] w-full rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+                      save.equippedCosmetic === activeCosmeticDetail.id
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50'
+                        : 'bg-cyan-400 text-slate-950'
+                    }`}
+                  >
+                    {save.equippedCosmetic === activeCosmeticDetail.id
+                      ? 'Active Hull Livery'
+                      : `Apply ${activeCosmeticDetail.name}`}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onUnlockCosmetic(activeCosmeticDetail.id)}
+                    disabled={
+                      save.salvageCredits < activeCosmeticDetail.costCredits
+                    }
+                    className={`min-h-[48px] w-full rounded-2xl text-xs sm:text-sm font-bold transition ${
+                      save.salvageCredits >= activeCosmeticDetail.costCredits
+                        ? 'bg-amber-400 text-slate-950 cursor-pointer'
+                        : 'bg-slate-900 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    Unlock Livery ({activeCosmeticDetail.costCredits} CR)
+                  </button>
+                )}
+              </>
+            )}
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-xl bg-cyan-400 px-5 py-2 text-xs font-bold uppercase tracking-wider text-slate-950 hover:bg-cyan-300 transition shadow-[0_0_20px_rgba(6,182,212,0.35)] cursor-pointer"
-          >
-            Confirm Loadout
-          </button>
         </div>
       </div>
     </div>

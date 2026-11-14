@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AbyssalCanvas,
   SimulationController,
@@ -26,12 +26,16 @@ import {
 } from './game/types';
 import { MISSION_CATALOG, STAGE_CONFIGS } from './game/stages';
 import {
+  detectDefaultTouchControls,
   getUnlockedStagesFromSave,
   loadPlayerSave,
 } from './game/saveManager';
 import { soundEngine } from './game/audio';
 
 const initialSave = loadPlayerSave().data;
+if (typeof window !== 'undefined' && detectDefaultTouchControls()) {
+  initialSave.settings.touchControlsEnabled = true;
+}
 
 const INITIAL_HUD: HudSnapshot = {
   mode: 'title',
@@ -119,13 +123,30 @@ export default function App() {
   });
 
   const simControllerRef = useRef<SimulationController | null>(null);
+  const userToggledTouchRef = useRef<boolean>(false);
 
   const handleRegisterController = useCallback(
     (controller: SimulationController) => {
       simControllerRef.current = controller;
+      if (detectDefaultTouchControls()) {
+        controller.updateSettings({ touchControlsEnabled: true });
+      }
     },
     [],
   );
+
+  useEffect(() => {
+    const checkViewportTouch = () => {
+      if (userToggledTouchRef.current) return;
+      if (detectDefaultTouchControls()) {
+        simControllerRef.current?.updateSettings({
+          touchControlsEnabled: true,
+        });
+      }
+    };
+    window.addEventListener('resize', checkViewportTouch);
+    return () => window.removeEventListener('resize', checkViewportTouch);
+  }, []);
 
   const handleHudUpdate = useCallback((snapshot: HudSnapshot) => {
     setHud(snapshot);
@@ -247,6 +268,9 @@ export default function App() {
   }, []);
 
   const handleUpdateSettings = useCallback((partial: Partial<GameSettings>) => {
+    if (typeof partial.touchControlsEnabled === 'boolean') {
+      userToggledTouchRef.current = true;
+    }
     simControllerRef.current?.updateSettings(partial);
   }, []);
 
@@ -319,7 +343,7 @@ export default function App() {
   }, []);
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-[#030812] select-none">
+    <main className="relative h-dvh w-screen overflow-hidden bg-[#030812] select-none">
       {/* Isolated 60fps Three.js WebGL Container */}
       <AbyssalCanvas
         mode={hud.mode}

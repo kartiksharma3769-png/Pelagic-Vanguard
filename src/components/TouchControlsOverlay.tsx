@@ -1,12 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Crosshair, Radar, RotateCw, Zap } from 'lucide-react';
-import { GameSettings, HudSnapshot } from '../game/types';
+import {
+  Camera,
+  Crosshair,
+  Radar,
+  RotateCw,
+  Sparkles,
+  Zap,
+} from 'lucide-react';
+import { CameraMode, GameSettings, HudSnapshot } from '../game/types';
 
 interface TouchControlsOverlayProps {
   hud: HudSnapshot;
   settings: GameSettings;
+  cameraMode: CameraMode;
   onTouchMove: (x: number, y: number) => void;
   onTouchFire: (firing: boolean) => void;
+  onToggleAutoFire: () => void;
+  onToggleCamera: () => void;
   onTriggerBarrelRoll: () => void;
   onTriggerTorpedoSalvo: () => void;
   onTriggerTacticalSonar: () => void;
@@ -15,8 +25,11 @@ interface TouchControlsOverlayProps {
 export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
   hud,
   settings,
+  cameraMode,
   onTouchMove,
   onTouchFire,
+  onToggleAutoFire,
+  onToggleCamera,
   onTriggerBarrelRoll,
   onTriggerTorpedoSalvo,
   onTriggerTacticalSonar,
@@ -28,6 +41,21 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
   });
   const [isFiring, setIsFiring] = useState(false);
   const activePointerIdRef = useRef<number | null>(null);
+
+  const pulseHaptic = (ms = 12) => {
+    if (
+      settings.hapticsEnabled &&
+      !settings.reducedMotion &&
+      typeof navigator !== 'undefined' &&
+      typeof navigator.vibrate === 'function'
+    ) {
+      try {
+        navigator.vibrate(ms);
+      } catch {
+        // Ignore on unsupported devices
+      }
+    }
+  };
 
   useEffect(() => {
     const resetTouchState = () => {
@@ -54,7 +82,7 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
 
   const isLeftHanded = settings.touchLayout === 'left_handed';
   const isMinimal = settings.touchLayout === 'minimal';
-  const maxRadius = 50;
+  const maxRadius = 46;
 
   const updateStickFromEvent = (clientX: number, clientY: number) => {
     const el = stickBaseRef.current;
@@ -92,6 +120,7 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     activePointerIdRef.current = e.pointerId;
+    pulseHaptic(8);
     updateStickFromEvent(e.clientX, e.clientY);
   };
 
@@ -109,47 +138,73 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
     onTouchMove(0, 0);
   };
 
+  const sonarReadyPct =
+    hud.sonarCooldown > 0
+      ? Math.max(0, Math.min(100, (1 - hud.sonarCooldown) * 100))
+      : 100;
+  const torpReadyPct =
+    hud.torpedoCooldown > 0
+      ? Math.max(0, Math.min(100, (1 - hud.torpedoCooldown) * 100))
+      : 100;
+
   const joystickCluster = (
-    <div className="pointer-events-auto flex flex-col items-center gap-1.5">
+    <div className="pointer-events-auto flex flex-col items-start gap-2">
+      {/* Quick Mobile View Switcher above thumbstick */}
+      {!isMinimal && (
+        <button
+          type="button"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            pulseHaptic(10);
+            onToggleCamera();
+          }}
+          className="flex min-h-[38px] items-center gap-1.5 rounded-xl border border-white/15 bg-slate-950/70 backdrop-blur-md px-2.5 py-1 text-[11px] font-semibold text-slate-200 active:scale-95 transition cursor-pointer"
+        >
+          <Camera className="h-3.5 w-3.5 text-cyan-300" />
+          <span>{cameraMode === 'chase' ? 'Chase' : 'Cockpit'}</span>
+        </button>
+      )}
+
       <div
         ref={stickBaseRef}
         onPointerDown={handleStickPointerDown}
         onPointerMove={handleStickPointerMove}
         onPointerUp={handleStickPointerUp}
         onPointerCancel={handleStickPointerUp}
-        className="relative flex h-28 w-28 sm:h-32 sm:w-32 touch-none items-center justify-center rounded-full border border-cyan-400/40 bg-slate-950/70 shadow-[0_0_30px_rgba(6,182,212,0.18)]"
+        className="relative flex h-28 w-28 sm:h-32 sm:w-32 touch-none items-center justify-center rounded-full border border-cyan-400/40 bg-slate-950/65 backdrop-blur-sm shadow-[0_0_28px_rgba(6,182,212,0.18)]"
       >
-        {/* Inner Diegetic Compass Ring */}
         <div className="h-14 w-14 rounded-full border border-dashed border-cyan-400/25" />
-        {/* Thumb Stick Knob */}
+        <div className="pointer-events-none absolute inset-2 rounded-full border border-white/5" />
         <div
-          className="pointer-events-none absolute h-12 w-12 rounded-full border-2 border-cyan-300 bg-gradient-to-b from-cyan-400/50 to-sky-500/30 shadow-[0_0_16px_rgba(34,211,238,0.45)] flex items-center justify-center"
+          className="pointer-events-none absolute h-12 w-12 rounded-full border-2 border-cyan-300 bg-gradient-to-b from-cyan-400/55 to-sky-500/35 shadow-[0_0_16px_rgba(34,211,238,0.45)] flex items-center justify-center"
           style={{
             transform: `translate3d(${knobOffset.x}px, ${knobOffset.y}px, 0)`,
           }}
         >
-          <div className="h-2 w-2 rounded-full bg-white" />
+          <div className="h-2.5 w-2.5 rounded-full bg-white" />
         </div>
       </div>
+
       {!isMinimal && (
-        <span className="font-mono-tabular text-[10px] font-medium tracking-wider text-cyan-200/70">
-          Pitch & Yaw
+        <span className="pl-2 font-mono-tabular text-[10px] font-medium text-cyan-200/70">
+          Steer · Drag Screen to Aim
         </span>
       )}
     </div>
   );
 
   const actionCluster = (
-    <div className="pointer-events-auto flex items-end gap-3.5">
-      {/* Secondary Ability Arc Column: Sonar, Barrel Roll, Torpedo Salvo */}
+    <div className="pointer-events-auto flex items-end gap-2.5 sm:gap-3.5">
+      {/* Secondary Ability Column: Sonar, Evade, Torpedo Salvo */}
       <div className="flex flex-col gap-2">
         <button
           type="button"
           onPointerDown={(e) => {
             e.stopPropagation();
+            pulseHaptic(14);
             onTriggerTacticalSonar();
           }}
-          className={`flex min-h-[44px] min-w-[108px] cursor-pointer touch-none items-center justify-center gap-1.5 rounded-full border px-3.5 font-mono-tabular text-xs font-semibold shadow-lg transition-transform active:scale-95 ${
+          className={`relative overflow-hidden flex min-h-[44px] min-w-[96px] sm:min-w-[108px] cursor-pointer touch-none items-center justify-center gap-1.5 rounded-2xl border px-3 font-mono-tabular text-xs font-semibold shadow-lg transition-transform active:scale-95 ${
             hud.sonarActive
               ? 'border-emerald-300 bg-emerald-500/30 text-emerald-100'
               : hud.sonarCooldown > 0
@@ -157,8 +212,14 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
                 : 'border-emerald-400/50 bg-slate-950/80 text-emerald-300'
           }`}
         >
-          <Radar className="h-3.5 w-3.5 shrink-0" />
-          <span>
+          {hud.sonarCooldown > 0 && !hud.sonarActive && (
+            <span
+              className="pointer-events-none absolute inset-y-0 left-0 bg-emerald-400/15"
+              style={{ width: `${sonarReadyPct}%` }}
+            />
+          )}
+          <Radar className="relative h-3.5 w-3.5 shrink-0" />
+          <span className="relative">
             {hud.sonarActive
               ? `${hud.sonarRemainingSeconds.toFixed(1)}s`
               : hud.sonarCooldown > 0
@@ -171,9 +232,14 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
           type="button"
           onPointerDown={(e) => {
             e.stopPropagation();
+            pulseHaptic(16);
             onTriggerBarrelRoll();
           }}
-          className="flex min-h-[44px] min-w-[108px] cursor-pointer touch-none items-center justify-center gap-1.5 rounded-full border border-cyan-400/50 bg-slate-950/80 px-3.5 font-mono-tabular text-xs font-semibold text-cyan-200 shadow-lg transition-transform active:scale-95"
+          className={`flex min-h-[44px] min-w-[96px] sm:min-w-[108px] cursor-pointer touch-none items-center justify-center gap-1.5 rounded-2xl border px-3 font-mono-tabular text-xs font-semibold shadow-lg transition-transform active:scale-95 ${
+            hud.barrelRolling
+              ? 'border-white bg-cyan-400/30 text-white'
+              : 'border-cyan-400/50 bg-slate-950/80 text-cyan-200'
+          }`}
         >
           <RotateCw className="h-3.5 w-3.5 shrink-0" />
           <span>Evade</span>
@@ -183,16 +249,25 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
           type="button"
           onPointerDown={(e) => {
             e.stopPropagation();
+            pulseHaptic(18);
             onTriggerTorpedoSalvo();
           }}
-          className={`flex min-h-[44px] min-w-[108px] cursor-pointer touch-none items-center justify-center gap-1.5 rounded-full border px-3.5 font-mono-tabular text-xs font-semibold shadow-lg transition-transform active:scale-95 ${
+          className={`relative overflow-hidden flex min-h-[44px] min-w-[96px] sm:min-w-[108px] cursor-pointer touch-none items-center justify-center gap-1.5 rounded-2xl border px-3 font-mono-tabular text-xs font-semibold shadow-lg transition-transform active:scale-95 ${
             hud.torpedoCooldown > 0
               ? 'border-white/10 bg-slate-950/80 text-slate-400'
-              : 'border-amber-400/60 bg-slate-950/80 text-amber-300'
+              : hud.lockedCount > 0
+                ? 'border-amber-300 bg-amber-500/25 text-amber-200 shadow-[0_0_16px_rgba(245,158,11,0.3)]'
+                : 'border-amber-400/55 bg-slate-950/80 text-amber-300'
           }`}
         >
-          <Zap className="h-3.5 w-3.5 shrink-0" />
-          <span>
+          {hud.torpedoCooldown > 0 && (
+            <span
+              className="pointer-events-none absolute inset-y-0 left-0 bg-amber-400/15"
+              style={{ width: `${torpReadyPct}%` }}
+            />
+          )}
+          <Zap className="relative h-3.5 w-3.5 shrink-0" />
+          <span className="relative">
             {hud.torpedoCooldown > 0
               ? `${Math.ceil(hud.torpedoCooldown * 3.8)}s`
               : `Torp ${hud.lockedCount}/${hud.maxLocks}`}
@@ -200,44 +275,82 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
         </button>
       </div>
 
-      {/* Primary Large Hold-to-Fire Trigger */}
-      <button
-        type="button"
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          e.currentTarget.setPointerCapture(e.pointerId);
-          setIsFiring(true);
-          onTouchFire(true);
-        }}
-        onPointerUp={(e) => {
-          e.stopPropagation();
-          setIsFiring(false);
-          onTouchFire(false);
-        }}
-        onPointerCancel={(e) => {
-          e.stopPropagation();
-          setIsFiring(false);
-          onTouchFire(false);
-        }}
-        className={`flex h-24 w-24 sm:h-28 sm:w-28 cursor-pointer touch-none flex-col items-center justify-center rounded-full border-2 font-display text-sm font-bold shadow-2xl transition-transform ${
-          isFiring
-            ? 'scale-95 border-white bg-cyan-400 text-slate-950 shadow-[0_0_30px_rgba(34,211,238,0.65)]'
-            : 'border-cyan-400/70 bg-slate-950/80 text-white shadow-[0_0_24px_rgba(6,182,212,0.25)]'
-        }`}
-      >
-        <Crosshair className="h-5 w-5 mb-0.5 text-cyan-300" />
-        <span>FIRE</span>
-        {!isMinimal && (
-          <span className="font-mono-tabular text-[10px] font-normal text-cyan-200/80">
-            Hold
-          </span>
-        )}
-      </button>
+      {/* Primary Fire Trigger + Quick Auto-Fire Switch */}
+      <div className="flex flex-col items-center gap-2">
+        <button
+          type="button"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            pulseHaptic(10);
+            onToggleAutoFire();
+          }}
+          className={`flex min-h-[38px] items-center gap-1 rounded-xl border px-3 py-1 text-[11px] font-bold transition active:scale-95 cursor-pointer whitespace-nowrap ${
+            settings.autoFire
+              ? 'border-emerald-400/70 bg-emerald-500/25 text-emerald-200 shadow-[0_0_14px_rgba(16,185,129,0.25)]'
+              : 'border-white/15 bg-slate-950/80 text-slate-300'
+          }`}
+        >
+          <Sparkles className="h-3 w-3" />
+          <span>{settings.autoFire ? 'Auto: ON' : 'Auto: OFF'}</span>
+        </button>
+
+        <button
+          type="button"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            pulseHaptic(12);
+            setIsFiring(true);
+            onTouchFire(true);
+          }}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+            setIsFiring(false);
+            onTouchFire(false);
+          }}
+          onPointerCancel={(e) => {
+            e.stopPropagation();
+            setIsFiring(false);
+            onTouchFire(false);
+          }}
+          className={`flex h-22 w-22 sm:h-26 sm:w-26 cursor-pointer touch-none flex-col items-center justify-center rounded-full border-2 font-display text-sm font-bold shadow-2xl transition-transform ${
+            isFiring
+              ? 'scale-95 border-white bg-cyan-400 text-slate-950 shadow-[0_0_32px_rgba(34,211,238,0.7)]'
+              : settings.autoFire
+                ? 'border-emerald-300/80 bg-slate-950/80 text-white shadow-[0_0_24px_rgba(16,185,129,0.3)]'
+                : 'border-cyan-400/75 bg-slate-950/80 text-white shadow-[0_0_24px_rgba(6,182,212,0.25)]'
+          }`}
+        >
+          <Crosshair
+            className={`h-5 w-5 mb-0.5 ${
+              isFiring
+                ? 'text-slate-950'
+                : settings.autoFire
+                  ? 'text-emerald-300'
+                  : 'text-cyan-300'
+            }`}
+          />
+          <span>FIRE</span>
+          {!isMinimal && (
+            <span
+              className={`font-mono-tabular text-[10px] font-medium ${
+                isFiring
+                  ? 'text-slate-900'
+                  : settings.autoFire
+                    ? 'text-emerald-300/90'
+                    : 'text-cyan-200/80'
+              }`}
+            >
+              {settings.autoFire ? 'Hold Boost' : 'Hold'}
+            </span>
+          )}
+        </button>
+      </div>
     </div>
   );
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-16 sm:bottom-20 z-30 flex items-end justify-between px-4 sm:px-8 pb-2">
+    <div className="pointer-events-none fixed inset-x-0 bottom-2 sm:bottom-4 z-30 flex items-end justify-between px-3 sm:px-6 pb-safe px-safe">
       {isLeftHanded ? (
         <>
           {actionCluster}

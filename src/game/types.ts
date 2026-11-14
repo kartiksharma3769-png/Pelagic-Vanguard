@@ -290,8 +290,10 @@ export interface GameSettings {
   fpsCap: 30 | 60;
   cameraShakeIntensity: number; // 0..100
   aimAssist: boolean;
+  autoFire: boolean;
+  hapticsEnabled: boolean;
   reducedMotion: boolean;
-  touchControlsEnabled: boolean; // Controlled via Settings per user choice
+  touchControlsEnabled: boolean;
   touchLayout: TouchLayoutPreset;
   joystickSensitivity: number; // 50..150
   joystickDeadzone: number; // 5..25

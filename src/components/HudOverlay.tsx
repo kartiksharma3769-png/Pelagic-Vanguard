@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import {
+  Camera,
   Compass,
   Crosshair,
-  Eye,
-  Flame,
   Gauge,
+  Pause,
   Play,
+  Plus,
+  Settings,
   Shield,
   ShoppingBag,
-  Sliders,
   Sparkles,
   Trophy,
-  User,
   Volume2,
   VolumeX,
   Wrench,
@@ -120,9 +120,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   selectedStage,
   selectedMissionId,
   cameraMode,
-  controlScheme,
   isMuted,
-  dockCollapsed,
   lockTargets,
   reticlePos,
   onSelectStage,
@@ -151,9 +149,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   onPauseGame,
   onReturnToTitle,
   onToggleCamera,
-  onToggleControlScheme,
   onToggleMute,
-  onToggleDock,
   onTriggerBarrelRoll,
   onTriggerTorpedoSalvo,
   onTriggerTacticalSonar,
@@ -181,7 +177,6 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
     ? Math.max(0, Math.min(100, (hud.bossHp / Math.max(1, hud.bossMaxHp)) * 100))
     : 0;
 
-  const isMenuOpen = hud.mode !== 'playing' || activeModal !== 'none';
   const save = hud.saveData;
   const unclaimedCount = getUnclaimedRewardsCount(save);
   const recommendedMissionId = getRecommendedNextMissionId(save);
@@ -200,7 +195,10 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
     WEAPON_CATALOG[3];
   const fleetPower = calculateFleetPower(save);
   const nextLevelXp = getXpForNextLevel(save.pilotLevel);
-  const xpPct = Math.min(100, Math.round((save.pilotXp / Math.max(1, nextLevelXp)) * 100));
+  const xpPct = Math.min(
+    100,
+    Math.round((save.pilotXp / Math.max(1, nextLevelXp)) * 100),
+  );
 
   const effectiveModal: HubModalType =
     activeModal !== 'none'
@@ -271,29 +269,33 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
     }, 340);
   };
 
+  const handleToggleAutoFire = () => {
+    onUpdateSettings({ autoFire: !save.settings.autoFire });
+  };
+
   return (
     <div
       className={`pointer-events-none fixed inset-0 z-20 flex flex-col justify-between select-none overflow-hidden ${
-        isMenuOpen ? 'cursor-auto' : 'cursor-none'
-      } ${save.settings.reducedMotion ? 'reduced-motion' : ''}`}
+        save.settings.reducedMotion ? 'reduced-motion' : ''
+      }`}
     >
-      {/* Mission Launch Cinematic Undocking Banner */}
+      {/* Mission Launch Undocking Flash */}
       {launchingMission && (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 backdrop-blur-sm animate-panel-fade">
-          <div className="rounded-2xl bg-slate-950/90 ring-1 ring-cyan-400/50 px-8 py-5 text-center shadow-[0_0_60px_rgba(34,211,238,0.35)]">
-            <div className="text-[11px] font-mono uppercase tracking-[0.22em] text-cyan-300">
-              Hydro-Thrusters Ignited · Undocking
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm animate-panel-fade px-4">
+          <div className="w-full max-w-sm rounded-3xl bg-slate-950/90 ring-1 ring-cyan-400/50 px-6 py-5 text-center shadow-[0_0_60px_rgba(34,211,238,0.35)]">
+            <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-cyan-300">
+              Hydro-Thrusters Ignited
             </div>
             <div className="mt-1 font-display text-2xl font-bold text-white">
               {launchingMission.title}
             </div>
             <div className="mt-1 text-xs text-slate-300">
-              {STAGE_CONFIGS[launchingMission.stageId].title} ·{' '}
-              {activeShip.name}
+              {STAGE_CONFIGS[launchingMission.stageId].title} · {activeShip.name}
             </div>
           </div>
         </div>
       )}
+
       {/* Dynamic Abyssal Depth & Overpressure Edge Vignette */}
       <div
         className="pointer-events-none fixed inset-0 transition-opacity duration-500"
@@ -305,16 +307,16 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 }) 86%, rgba(2, 6, 23, 0.9) 100%)`
               : hud.mode === 'playing'
                 ? `radial-gradient(circle at center, transparent 58%, ${hud.ambientColorHex}10 85%, rgba(2, 6, 23, 0.65) 100%)`
-                : `radial-gradient(circle at 42% 50%, transparent 45%, rgba(2, 6, 23, 0.78) 100%)`,
+                : `radial-gradient(circle at 50% 42%, transparent 42%, rgba(2, 6, 23, 0.78) 100%)`,
         }}
       />
 
       {/* =====================================================================
-       * 1. IN-FLIGHT DIEGETIC VISOR COMBAT HUD (mode === 'playing')
+       * 1. MOBILE GAME IN-FLIGHT VISOR COMBAT HUD (mode === 'playing')
        * ==================================================================== */}
       {hud.mode === 'playing' && (
         <>
-          {/* Projected 3D Screen Lock Brackets (Enemies & Boss Appendages) */}
+          {/* Projected 3D Screen Lock Brackets */}
           {lockTargets.map((target) => {
             if (!target.visible) return null;
             return (
@@ -335,7 +337,6 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                         : ''
                   }`}
                 >
-                  {/* Visor Corner Brackets instead of solid boxes */}
                   <span
                     className={`absolute top-0 left-0 h-2.5 w-2.5 border-t-2 border-l-2 ${
                       target.locked
@@ -408,63 +409,195 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
             </div>
           </div>
 
-          {/* Top Visor Telemetry Strip (Frameless with Soft Gradient Scrim) */}
-          <header className="relative z-10 flex items-start justify-between gap-6 bg-gradient-to-b from-slate-950/85 via-slate-950/35 to-transparent px-5 pt-4 pb-6">
-            {/* Left: Mission & Objective Status */}
-            <div className="space-y-1 max-w-md">
-              <div className="flex items-center gap-2 text-xs text-cyan-300 font-medium">
-                <span className="font-display text-sm font-semibold text-white tracking-tight">
-                  {hud.missionTitle}
-                </span>
-                <span aria-hidden="true">·</span>
-                <span className="tabular-nums text-slate-300">
-                  {hud.depthMeters.toLocaleString()}m Depth
-                </span>
-                <span aria-hidden="true">·</span>
-                <span className="text-slate-400">{hud.depthStratumName}</span>
-              </div>
-              <div className="text-xs text-slate-200 font-medium drop-shadow">
-                {hud.flightSchoolStepText || hud.primaryObjectiveText}
-                {hud.objectiveProgressTarget > 1 && (
-                  <span className="ml-2 text-cyan-300 font-semibold tabular-nums">
-                    ({hud.objectiveProgressCurrent}/{hud.objectiveProgressTarget})
+          {/* Mobile Top Visor Header */}
+          <header className="relative z-10 flex flex-col gap-2 bg-gradient-to-b from-slate-950/90 via-slate-950/45 to-transparent px-3 sm:px-5 pt-2.5 pb-4 pt-safe px-safe">
+            <div className="flex items-start justify-between gap-2 sm:gap-4">
+              {/* Left: Mission & Objective */}
+              <div className="space-y-0.5 min-w-0 max-w-[54%] sm:max-w-md">
+                <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-cyan-300 font-medium">
+                  <span className="font-display text-xs sm:text-sm font-semibold text-white tracking-tight truncate">
+                    {hud.missionTitle}
                   </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums text-slate-300 shrink-0">
+                    {hud.depthMeters.toLocaleString()}m
+                  </span>
+                </div>
+                <div className="text-[11px] sm:text-xs text-slate-200 font-medium drop-shadow truncate">
+                  {hud.flightSchoolStepText || hud.primaryObjectiveText}
+                  {hud.objectiveProgressTarget > 1 && (
+                    <span className="ml-1 text-cyan-300 font-semibold tabular-nums">
+                      ({hud.objectiveProgressCurrent}/{hud.objectiveProgressTarget})
+                    </span>
+                  )}
+                </div>
+                {hud.objectiveType === 'protect_beacon' && (
+                  <div className="text-[11px] text-amber-300 tabular-nums">
+                    Beacon: {hud.beaconIntegrityPct}%
+                  </div>
                 )}
               </div>
-              {hud.objectiveType === 'protect_beacon' && (
-                <div className="flex items-center gap-2 pt-0.5 text-xs text-amber-300 tabular-nums">
-                  <span>Relay Beacon Integrity: {hud.beaconIntegrityPct}%</span>
-                </div>
-              )}
-            </div>
 
-            {/* Center: Frameless Leviathan Boss Visor Bar (Only when Boss is Active) */}
-            {hud.bossActive && (
-              <div className="flex-1 max-w-xl mx-auto px-4">
-                <div className="flex items-baseline justify-between gap-4">
-                  <div className="flex items-baseline gap-2">
-                    <h2 className="font-display text-base sm:text-lg font-bold tracking-tight text-white">
-                      {hud.bossName}
-                    </h2>
-                    <span className="text-xs text-rose-300/90 hidden sm:inline">
-                      {hud.bossSubtitle}
+              {/* Right: Score, Multiplier & Mobile Controls */}
+              <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+                <div className="text-right tabular-nums mr-0.5">
+                  <div className="font-display text-sm sm:text-lg font-bold text-white leading-none">
+                    {hud.score.toLocaleString()}
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] sm:text-[11px] text-slate-300">
+                    <span className="text-emerald-400 font-semibold">
+                      {hud.multiplier.toFixed(1)}x
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span className="text-amber-300">
+                      {hud.salvageCredits.toLocaleString()} CR
                     </span>
                   </div>
-                  <div className="text-xs font-medium text-rose-200 tabular-nums">
+                </div>
+
+                {!save.settings.touchControlsEnabled && (
+                  <>
+                    <button
+                      onClick={handleToggleAutoFire}
+                      aria-label="Toggle Auto-Fire"
+                      className={`pointer-events-auto min-h-[44px] flex items-center gap-1 rounded-xl px-2.5 text-xs font-bold transition cursor-pointer ${
+                        save.settings.autoFire
+                          ? 'bg-emerald-500/25 text-emerald-200 ring-1 ring-emerald-400/50'
+                          : 'bg-slate-900/80 text-slate-300 ring-1 ring-white/15'
+                      }`}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">
+                        {save.settings.autoFire ? 'Auto' : 'Manual'}
+                      </span>
+                    </button>
+                    <button
+                      onClick={onToggleCamera}
+                      aria-label="Toggle Camera View"
+                      className="pointer-events-auto min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-slate-900/80 ring-1 ring-white/15 text-slate-200 transition cursor-pointer"
+                    >
+                      <Camera className="h-4 w-4 text-cyan-300" />
+                    </button>
+                  </>
+                )}
+
+                <button
+                  onClick={onPauseGame}
+                  aria-label="Pause Mission"
+                  className="pointer-events-auto min-h-[44px] min-w-[44px] flex items-center justify-center gap-1.5 rounded-xl bg-slate-900/85 hover:bg-slate-800/90 ring-1 ring-white/15 px-3 text-xs font-semibold text-white transition active:scale-95 cursor-pointer"
+                >
+                  <Pause className="h-4 w-4" />
+                  <span className="hidden sm:inline">Pause</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Compact Telemetry Strip (Hull, Shield, Boost/Stress, Ordnance) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
+              <div className="rounded-xl bg-slate-950/70 px-2.5 py-1.5 ring-1 ring-white/10">
+                <div className="flex items-center justify-between text-[10px] font-medium">
+                  <span className="text-emerald-300 flex items-center gap-1">
+                    <Shield className="h-3 w-3" /> Hull
+                  </span>
+                  <span className="tabular-nums text-white font-semibold">
+                    {hud.hull}/{hud.maxHull}
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-900">
+                  <div
+                    className={`h-full transition-all duration-150 ${
+                      hullPct > 50
+                        ? 'bg-emerald-400'
+                        : hullPct > 25
+                          ? 'bg-amber-400'
+                          : 'bg-rose-500'
+                    }`}
+                    style={{ width: `${hullPct}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-950/70 px-2.5 py-1.5 ring-1 ring-white/10">
+                <div className="flex items-center justify-between text-[10px] font-medium">
+                  <span className="text-cyan-300 flex items-center gap-1">
+                    <Crosshair className="h-3 w-3" /> Shield
+                  </span>
+                  <span className="tabular-nums text-cyan-200 font-semibold">
+                    {hud.shield}/{hud.maxShield}
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-900">
+                  <div
+                    className="h-full bg-cyan-400 transition-all duration-150"
+                    style={{ width: `${shieldPct}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-950/70 px-2.5 py-1.5 ring-1 ring-white/10">
+                <div className="flex items-center justify-between text-[10px] font-medium">
+                  <span className="text-sky-300 flex items-center gap-1">
+                    <Zap className="h-3 w-3" /> Boost
+                  </span>
+                  <span className="tabular-nums text-sky-200 font-semibold flex items-center gap-1">
+                    <span>{Math.round(boostPct)}%</span>
+                    <span className="text-amber-300 flex items-center gap-0.5">
+                      <Gauge className="h-2.5 w-2.5" />
+                      {hud.hullStress}%
+                    </span>
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-900">
+                  <div
+                    className="h-full bg-sky-400 transition-all duration-150"
+                    style={{ width: `${boostPct}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-950/70 px-2.5 py-1.5 ring-1 ring-white/10 flex flex-col justify-center">
+                <div className="flex items-center justify-between text-[10px] tabular-nums">
+                  <span className="text-slate-300 truncate">
+                    Locks:{' '}
+                    <strong className="text-amber-300">
+                      {hud.lockedCount}/{hud.maxLocks}
+                    </strong>
+                  </span>
+                  <span className="text-slate-300 truncate">
+                    Sonar:{' '}
+                    <strong className="text-emerald-300">
+                      {hud.sonarActive
+                        ? `${hud.sonarRemainingSeconds.toFixed(1)}s`
+                        : hud.sonarCooldown > 0
+                          ? `${Math.ceil(hud.sonarCooldown * 7.5)}s`
+                          : 'Ready'}
+                    </strong>
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                  {equippedPrimary.name} · {equippedSecondary.name}
+                </div>
+              </div>
+            </div>
+
+            {/* Leviathan Boss Visor Bar + Tappable Weak-Point Buttons */}
+            {hud.bossActive && (
+              <div className="w-full max-w-xl mx-auto pt-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h2 className="font-display text-xs sm:text-base font-bold tracking-tight text-white truncate">
+                    {hud.bossName}
+                  </h2>
+                  <div className="text-[11px] font-medium text-rose-200 tabular-nums shrink-0">
                     Phase {hud.bossPhase}/3 · {hud.bossHp.toLocaleString()} HP
                   </div>
                 </div>
-
-                {/* Sleek Visor Boss Health Line */}
-                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-900/90">
+                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-900/90">
                   <div
                     className="h-full bg-gradient-to-r from-rose-500 via-amber-400 to-rose-400 transition-all duration-150"
                     style={{ width: `${bossPct}%` }}
                   />
                 </div>
-
-                {/* Interactive Appendage Target Locks (Compact Single Row) */}
-                <div className="mt-2 grid grid-cols-4 gap-2">
+                <div className="mt-1.5 grid grid-cols-4 gap-1.5">
                   {hud.bossAppendages.map((part) => {
                     const pct = Math.max(
                       0,
@@ -480,20 +613,20 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                           !part.destroyed && onFocusAppendage(part.slot)
                         }
                         disabled={part.destroyed}
-                        className={`pointer-events-auto group flex flex-col justify-between rounded-lg px-2.5 py-1.5 text-left transition cursor-pointer ${
+                        className={`pointer-events-auto min-h-[44px] flex flex-col justify-between rounded-xl px-2 py-1.5 text-left transition cursor-pointer ${
                           part.destroyed
                             ? 'bg-slate-950/40 opacity-40'
                             : part.isSonarWeakPoint
-                              ? 'bg-emerald-950/60 ring-1 ring-emerald-400/70'
-                              : 'bg-slate-950/65 hover:bg-slate-900/85 ring-1 ring-white/10'
+                              ? 'bg-emerald-950/65 ring-1 ring-emerald-400/70'
+                              : 'bg-slate-950/70 ring-1 ring-white/10 active:scale-95'
                         }`}
                       >
-                        <div className="flex items-center justify-between text-[11px] font-medium">
+                        <div className="flex items-center justify-between text-[10px] font-medium gap-1">
                           <span className="capitalize text-slate-200 truncate">
                             {part.slot}
                           </span>
                           <span
-                            className={`tabular-nums ${
+                            className={`tabular-nums shrink-0 ${
                               part.destroyed
                                 ? 'text-rose-400'
                                 : part.isSonarWeakPoint
@@ -501,7 +634,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                                   : 'text-cyan-300'
                             }`}
                           >
-                            {part.destroyed ? 'Severed' : `${pct}%`}
+                            {part.destroyed ? 'Cut' : `${pct}%`}
                           </span>
                         </div>
                         <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800">
@@ -520,374 +653,104 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     );
                   })}
                 </div>
-
                 {hud.bossTelegraphText && (
-                  <div className="mt-1.5 text-center text-xs font-semibold text-amber-300 drop-shadow">
+                  <div className="mt-1 text-center text-[11px] font-semibold text-amber-300 drop-shadow">
                     {hud.bossTelegraphText}
                   </div>
                 )}
               </div>
             )}
-
-            {/* Right: Score, Multiplier & Quick Visor Actions */}
-            <div className="flex items-center gap-4">
-              <div className="text-right tabular-nums">
-                <div className="font-display text-xl font-bold text-white leading-none">
-                  {hud.score.toLocaleString()}{' '}
-                  <span className="text-xs font-normal text-cyan-400">pts</span>
-                </div>
-                <div className="mt-1 flex items-center justify-end gap-2 text-xs text-slate-300">
-                  <span className="text-emerald-400 font-semibold">
-                    {hud.multiplier.toFixed(1)}x Streak
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span className="text-amber-300">
-                    {hud.salvageCredits.toLocaleString()} Credits
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={onToggleDock}
-                  className="pointer-events-auto rounded-lg bg-slate-900/75 hover:bg-slate-800/90 ring-1 ring-white/15 px-3 py-1.5 text-xs font-medium text-slate-200 transition cursor-pointer whitespace-nowrap"
-                >
-                  {dockCollapsed ? 'Show HUD (H)' : 'Minimal HUD (H)'}
-                </button>
-                <button
-                  onClick={onPauseGame}
-                  className="pointer-events-auto rounded-lg bg-slate-900/75 hover:bg-slate-800/90 ring-1 ring-white/15 px-3.5 py-1.5 text-xs font-medium text-white transition cursor-pointer whitespace-nowrap"
-                >
-                  Pause (Esc)
-                </button>
-              </div>
-            </div>
           </header>
 
-          {/* Center Peripheral Warnings (Pressure / Incoming Telegraph) */}
-          <div className="pointer-events-none my-auto flex flex-col items-center justify-end pb-12 gap-1.5">
+          {/* Center Peripheral Warnings */}
+          <div className="pointer-events-none my-auto flex flex-col items-center justify-end pb-10 gap-1.5 px-4">
             {hud.pressureZoneLabel && (
-              <div className="rounded-full bg-rose-950/80 ring-1 ring-rose-400/50 px-4 py-1 text-xs font-medium text-rose-200 shadow-lg">
+              <div className="rounded-full bg-rose-950/85 ring-1 ring-rose-400/50 px-4 py-1 text-xs font-medium text-rose-200 shadow-lg">
                 {hud.pressureZoneLabel}
               </div>
             )}
             {hud.hazardWarningText && !hud.bossTelegraphText && (
-              <div className="rounded-full bg-amber-950/80 ring-1 ring-amber-400/50 px-4 py-1 text-xs font-medium text-amber-200 shadow-lg">
+              <div className="rounded-full bg-amber-950/85 ring-1 ring-amber-400/50 px-4 py-1 text-xs font-medium text-amber-200 shadow-lg">
                 {hud.hazardWarningText}
               </div>
             )}
           </div>
-
-          {/* Bottom Diegetic Visor Arcs & Sleek Action Strip */}
-          <footer className="relative z-10 flex flex-col gap-3 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent px-5 pt-6 pb-4">
-            <div className="flex flex-wrap items-end justify-between gap-6">
-              {/* Bottom-Left Visor Arc: Hull Integrity & Piezo-Shield */}
-              <div className="w-full sm:w-72 space-y-2.5">
-                <div>
-                  <div className="flex items-baseline justify-between text-xs">
-                    <span className="font-medium text-slate-200 flex items-center gap-1.5">
-                      <Shield className="h-3.5 w-3.5 text-emerald-400" />
-                      Hull Integrity
-                    </span>
-                    <span
-                      className={`tabular-nums font-semibold ${
-                        hullPct < 30 ? 'text-rose-400' : 'text-emerald-300'
-                      }`}
-                    >
-                      {hud.hull} / {hud.maxHull}
-                    </span>
-                  </div>
-                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/10">
-                    <div
-                      className={`h-full transition-all duration-150 ${
-                        hullPct > 50
-                          ? 'bg-gradient-to-r from-emerald-500 to-cyan-400'
-                          : hullPct > 25
-                            ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
-                            : 'bg-gradient-to-r from-rose-600 to-red-400'
-                      }`}
-                      style={{ width: `${hullPct}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-baseline justify-between text-xs">
-                    <span className="font-medium text-slate-300 flex items-center gap-1.5">
-                      <Crosshair className="h-3.5 w-3.5 text-cyan-400" />
-                      Piezo-Shield
-                    </span>
-                    <span className="tabular-nums font-semibold text-cyan-300">
-                      {hud.shield} / {hud.maxShield}
-                    </span>
-                  </div>
-                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/10">
-                    <div
-                      className="h-full bg-gradient-to-r from-sky-500 via-cyan-400 to-teal-300 transition-all duration-150"
-                      style={{ width: `${shieldPct}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom-Center Collapsible Visor Control Bar */}
-              {!dockCollapsed && (
-                <div className="pointer-events-auto mx-auto flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-slate-950/75 ring-1 ring-white/10 px-3 py-2">
-                  <button
-                    onClick={onTriggerTacticalSonar}
-                    className="rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 ring-1 ring-emerald-400/40 px-3 py-1.5 text-xs font-medium text-emerald-200 transition cursor-pointer whitespace-nowrap"
-                  >
-                    Sonar Pulse (Q)
-                  </button>
-                  <button
-                    onClick={onTriggerBarrelRoll}
-                    className="rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 ring-1 ring-cyan-400/40 px-3 py-1.5 text-xs font-medium text-cyan-200 transition cursor-pointer whitespace-nowrap"
-                  >
-                    Barrel Roll (Space)
-                  </button>
-                  <button
-                    onClick={onTriggerTorpedoSalvo}
-                    className="rounded-xl bg-amber-500/15 hover:bg-amber-500/25 ring-1 ring-amber-400/40 px-3 py-1.5 text-xs font-medium text-amber-200 transition cursor-pointer whitespace-nowrap"
-                  >
-                    Launch Torpedoes (K)
-                  </button>
-                  <span className="h-4 w-px bg-white/10 mx-0.5 hidden sm:inline-block" />
-                  <button
-                    onClick={onToggleCamera}
-                    className="rounded-xl bg-slate-900/80 hover:bg-slate-800 ring-1 ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition cursor-pointer whitespace-nowrap"
-                  >
-                    View: {cameraMode === 'chase' ? 'Chase' : 'Cockpit'} (C)
-                  </button>
-                  <button
-                    onClick={onToggleControlScheme}
-                    className="rounded-xl bg-slate-900/80 hover:bg-slate-800 ring-1 ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition cursor-pointer whitespace-nowrap"
-                  >
-                    {controlScheme === 'hybrid_mouse' ? 'Mouse + WASD' : 'Keyboard'}
-                  </button>
-                </div>
-              )}
-
-              {/* Bottom-Right Visor Arc: Weapon States, Hydro-Boost, Hull Stress & Ordnance Locks */}
-              <div className="w-full sm:w-76 space-y-2">
-                <div className="flex items-center justify-between text-[11px] text-slate-300 border-b border-white/10 pb-1.5">
-                  <span className="truncate">
-                    Cannon:{' '}
-                    <strong className="text-cyan-200 font-semibold">
-                      {equippedPrimary.name}
-                    </strong>
-                  </span>
-                  <span className="truncate ml-2">
-                    Ordnance:{' '}
-                    <strong className="text-amber-200 font-semibold">
-                      {equippedSecondary.name}
-                    </strong>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs tabular-nums">
-                  <span className="text-slate-300">
-                    Torpedo Locks:{' '}
-                    <strong className="text-amber-300">
-                      {hud.lockedCount}/{hud.maxLocks}
-                    </strong>
-                  </span>
-                  <span className="text-slate-300">
-                    Sonar:{' '}
-                    <strong
-                      className={
-                        hud.sonarActive
-                          ? 'text-emerald-300'
-                          : hud.sonarCooldown > 0
-                            ? 'text-amber-300'
-                            : 'text-cyan-300'
-                      }
-                    >
-                      {hud.sonarActive
-                        ? `${hud.sonarRemainingSeconds.toFixed(1)}s`
-                        : hud.sonarCooldown > 0
-                          ? `${Math.ceil(hud.sonarCooldown * 7.5)}s`
-                          : 'Ready'}
-                    </strong>
-                  </span>
-                </div>
-
-                <div>
-                  <div className="flex items-baseline justify-between text-xs">
-                    <span className="font-medium text-slate-300 flex items-center gap-1.5">
-                      <Zap className="h-3.5 w-3.5 text-sky-400" />
-                      Hydro-Boost
-                    </span>
-                    <span className="tabular-nums font-semibold text-sky-300">
-                      {Math.round(boostPct)}%
-                    </span>
-                  </div>
-                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/10">
-                    <div
-                      className="h-full bg-gradient-to-r from-cyan-500 to-sky-300 transition-all duration-150"
-                      style={{ width: `${boostPct}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-baseline justify-between text-xs">
-                    <span
-                      className={`font-medium flex items-center gap-1.5 ${
-                        hud.inDeepPressureZone ? 'text-rose-300' : 'text-slate-400'
-                      }`}
-                    >
-                      <Gauge className="h-3.5 w-3.5 text-amber-400" />
-                      Hull Stress
-                    </span>
-                    <span className="tabular-nums text-amber-300 font-medium">
-                      {hud.hullStress}%
-                    </span>
-                  </div>
-                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/10">
-                    <div
-                      className={`h-full transition-all duration-150 ${
-                        hud.hullStress > 75
-                          ? 'bg-gradient-to-r from-rose-600 to-amber-400'
-                          : 'bg-gradient-to-r from-amber-500 to-yellow-300'
-                      }`}
-                      style={{ width: `${hud.hullStress}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </footer>
         </>
       )}
 
-      {/* Touch Controls Overlay (Active during combat when enabled) */}
+      {/* Dual-Thumb Mobile Touch Controls */}
       <TouchControlsOverlay
         hud={hud}
         settings={save.settings}
+        cameraMode={cameraMode}
         onTouchMove={onTouchMove}
         onTouchFire={onTouchFireChange}
+        onToggleAutoFire={handleToggleAutoFire}
+        onToggleCamera={onToggleCamera}
         onTriggerBarrelRoll={onTriggerBarrelRoll}
         onTriggerTorpedoSalvo={onTriggerTorpedoSalvo}
         onTriggerTacticalSonar={onTriggerTacticalSonar}
       />
 
       {/* =====================================================================
-       * 2. LIVING 3D COMMAND STATION HOME HUB & PERIMETER NAVIGATION
+       * 2. MOBILE-NATIVE HOME BERTH LOBBY (mode === 'title')
        * ==================================================================== */}
-      {hud.mode !== 'playing' && (
+      {hud.mode === 'title' && effectiveModal === 'none' && (
         <>
-          {/* Top Perimeter Navigation Bar (Visible across Hub & Secondary Overlays) */}
-          <header className="pointer-events-auto relative z-30 flex flex-wrap items-center justify-between gap-4 bg-gradient-to-b from-slate-950/90 via-slate-950/60 to-transparent px-6 py-4 border-b border-white/10">
-            {/* Left: Pilot Profile & Level Compact Lockup */}
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => openHubSection('profile')}
-                className="group flex items-center gap-3 text-left transition cursor-pointer"
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/15 ring-1 ring-cyan-400/40 font-display text-sm font-bold text-cyan-300 group-hover:bg-cyan-500/25 transition">
-                  Lv.{save.pilotLevel}
+          {/* Slim Mobile Game Top Status Bar */}
+          <header className="pointer-events-auto relative z-30 flex items-center justify-between gap-2 bg-gradient-to-b from-slate-950/90 via-slate-950/55 to-transparent px-3 sm:px-5 py-2 pt-safe px-safe">
+            {/* Left: Pilot Badge -> Opens Profile */}
+            <button
+              onClick={() => openHubSection('profile')}
+              className="group min-h-[44px] flex items-center gap-2 rounded-2xl bg-slate-950/75 ring-1 ring-white/15 px-2.5 py-1.5 text-left transition active:scale-95 cursor-pointer"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500/20 ring-1 ring-cyan-400/45 font-display text-xs font-bold text-cyan-300 shrink-0">
+                {save.pilotLevel}
+              </div>
+              <div className="min-w-0 pr-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-display text-xs font-bold text-white truncate max-w-[96px] sm:max-w-[140px]">
+                    {save.callsign}
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-300 tabular-nums hidden sm:inline">
+                    · {fleetPower} PWR
+                  </span>
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-display text-sm font-bold text-white group-hover:text-cyan-300 transition">
-                      {save.callsign}
-                    </span>
-                    <span className="text-xs text-slate-400">·</span>
-                    <span className="text-xs font-medium text-emerald-300 tabular-nums">
-                      {fleetPower} Power
-                    </span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-2">
-                    <div className="h-1 w-24 overflow-hidden rounded-full bg-slate-800">
-                      <div
-                        className="h-full bg-cyan-400"
-                        style={{ width: `${xpPct}%` }}
-                      />
-                    </div>
-                    <span className="text-[11px] text-slate-400 tabular-nums">
-                      {save.pilotXp}/{nextLevelXp} XP
-                    </span>
-                  </div>
-                </div>
-              </button>
-            </div>
-
-            {/* Center: Recognizable Icon + Label Navigation */}
-            <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
-              {(
-                [
-                  { id: 'none', label: 'Berth', icon: Eye },
-                  { id: 'missions', label: 'Missions', icon: Compass },
-                  { id: 'hangar', label: 'Hangar', icon: Wrench },
-                  { id: 'market', label: 'Market', icon: ShoppingBag },
-                  {
-                    id: 'objectives',
-                    label: 'Rewards',
-                    icon: Trophy,
-                    badge: unclaimedCount.total,
-                  },
-                  { id: 'profile', label: 'Profile', icon: User },
-                  { id: 'settings', label: 'Settings', icon: Sliders },
-                ] as {
-                  id: HubModalType;
-                  label: string;
-                  icon: React.ComponentType<{ className?: string }>;
-                  badge?: number;
-                }[]
-              ).map((item) => {
-                const Icon = item.icon;
-                const isActive = effectiveModal === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() =>
-                      item.id === 'none' ? closeModal() : openHubSection(item.id)
-                    }
-                    className={`relative flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs sm:text-sm font-medium transition cursor-pointer whitespace-nowrap ${
-                      isActive
-                        ? 'bg-cyan-500/20 text-white ring-1 ring-cyan-400/50 shadow-[0_0_20px_rgba(6,182,212,0.2)]'
-                        : 'text-slate-300 hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    <Icon
-                      className={`h-4 w-4 ${
-                        isActive ? 'text-cyan-300' : 'text-slate-400'
-                      }`}
-                    />
-                    <span>{item.label}</span>
-                    {item.badge && item.badge > 0 ? (
-                      <span className="ml-0.5 rounded-full bg-amber-400 px-1.5 py-0.2 text-[10px] font-bold text-slate-950 tabular-nums">
-                        {item.badge}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </nav>
-
-            {/* Right: Clean Unboxed Currency Readouts & Audio Toggle */}
-            <div className="flex items-center gap-5 tabular-nums">
-              <div className="text-right">
-                <div className="text-[11px] text-slate-400">Credits</div>
-                <div className="font-display text-sm sm:text-base font-bold text-amber-300">
-                  {save.salvageCredits.toLocaleString()}{' '}
-                  <span className="text-xs font-normal text-amber-400/80">CR</span>
+                <div className="mt-1 h-1 w-16 sm:w-20 overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="h-full bg-cyan-400"
+                    style={{ width: `${xpPct}%` }}
+                  />
                 </div>
               </div>
+            </button>
 
-              <div className="h-6 w-px bg-white/10" />
+            {/* Right: Currency Counters + Mute + Settings */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={() => openHubSection('market')}
+                className="min-h-[44px] flex items-center gap-1.5 rounded-2xl bg-slate-950/75 ring-1 ring-white/15 px-2.5 py-1.5 tabular-nums transition active:scale-95 cursor-pointer"
+              >
+                <span className="font-mono text-xs font-bold text-amber-300">
+                  {hud.salvageCredits.toLocaleString()}
+                </span>
+                <span className="text-[10px] text-amber-200/80">CR</span>
+                <span className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-400/20 text-amber-300">
+                  <Plus className="h-3 w-3" />
+                </span>
+              </button>
 
-              <div className="text-right">
-                <div className="text-[11px] text-slate-400">Abyssal Alloy</div>
-                <div className="font-display text-sm sm:text-base font-bold text-fuchsia-300">
-                  {save.abyssalMaterials.toLocaleString()}{' '}
-                  <span className="text-xs font-normal text-fuchsia-400/80">Alloy</span>
-                </div>
+              <div className="hidden xs:flex min-h-[44px] items-center gap-1 rounded-2xl bg-slate-950/75 ring-1 ring-white/15 px-2.5 py-1.5 tabular-nums">
+                <span className="font-mono text-xs font-bold text-fuchsia-300">
+                  {hud.abyssalMaterials}
+                </span>
+                <span className="text-[10px] text-fuchsia-200/80">AL</span>
               </div>
 
               <button
                 onClick={onToggleMute}
-                title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition cursor-pointer"
+                aria-label={isMuted ? 'Unmute Audio' : 'Mute Audio'}
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-2xl bg-slate-950/75 ring-1 ring-white/15 transition active:scale-95 cursor-pointer"
               >
                 {isMuted ? (
                   <VolumeX className="h-4 w-4 text-rose-400" />
@@ -895,412 +758,442 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                   <Volume2 className="h-4 w-4 text-cyan-300" />
                 )}
               </button>
+
+              <button
+                onClick={() => openHubSection('settings')}
+                aria-label="Settings"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-2xl bg-slate-950/75 ring-1 ring-white/15 text-slate-200 transition active:scale-95 cursor-pointer"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
             </div>
           </header>
 
-          {/* HOME HUB CENTER & BOTTOM ANCHORS (100% Unobstructed 3D Fighter in Center) */}
-          {hud.mode === 'title' && effectiveModal === 'none' && (
-            <div className="relative z-20 flex-1 flex flex-col justify-between p-6 sm:p-10 pointer-events-none">
-              {/* Top-Left Subtle Title & Active Hull Callout */}
-              <div className="max-w-md space-y-1.5">
-                <div className="text-xs font-medium tracking-wider text-cyan-300/90">
-                  Deep-Trench Strike Command
-                </div>
-                <h1 className="font-display text-3xl sm:text-5xl font-bold tracking-tight text-white drop-shadow-[0_4px_24px_rgba(0,0,0,0.9)]">
+          {/* Center Open 3D Berth Stage */}
+          <div className="relative z-10 flex-1 flex flex-col justify-between px-3 sm:px-6 pt-1 pb-2 pointer-events-none">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h1 className="font-display text-xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-[0_4px_18px_rgba(0,0,0,0.9)]">
                   Pelagic Vanguard
                 </h1>
-                <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-300 pt-1">
-                  <span className="font-semibold text-white">
+                <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-slate-300">
+                  <span
+                    className="font-semibold"
+                    style={{ color: activeShip.accentColor }}
+                  >
                     {activeShip.name}
                   </span>
                   <span aria-hidden="true">·</span>
                   <span>{activeShip.classLabel}</span>
                   <span aria-hidden="true">·</span>
-                  <button
-                    onClick={() => openHubSection('hangar')}
-                    className="pointer-events-auto text-cyan-300 hover:text-cyan-200 underline underline-offset-4 cursor-pointer"
-                  >
-                    Customize Craft
-                  </button>
+                  <span className="font-mono text-emerald-300 tabular-nums">
+                    {fleetPower} PWR
+                  </span>
                 </div>
               </div>
-
-              {/* Bottom Perimeter: Left Fighter Telemetry + Right Prominent Next Mission & PLAY Action */}
-              <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between gap-6 pt-8">
-                {/* Bottom-Left: Minimalist Active Fighter Specs (Unboxed) */}
-                <div className="pointer-events-auto space-y-3 bg-gradient-to-r from-slate-950/85 via-slate-950/50 to-transparent pr-8 py-3 rounded-2xl">
-                  <div className="text-xs text-slate-400">
-                    Drag anywhere in the berth to rotate your strike fighter
-                  </div>
-                  <div className="flex flex-wrap items-center gap-6 text-xs tabular-nums">
-                    <div>
-                      <span className="text-slate-400 block">Hull Armor</span>
-                      <span className="font-display text-base font-bold text-white">
-                        {activeShip.baseHull} HP
-                      </span>
-                    </div>
-                    <div className="h-6 w-px bg-white/10" />
-                    <div>
-                      <span className="text-slate-400 block">Piezo-Shield</span>
-                      <span className="font-display text-base font-bold text-cyan-300">
-                        {activeShip.baseShield} SP
-                      </span>
-                    </div>
-                    <div className="h-6 w-px bg-white/10" />
-                    <div>
-                      <span className="text-slate-400 block">Torpedo Locks</span>
-                      <span className="font-display text-base font-bold text-amber-300">
-                        {activeShip.baseTorpedoLocks} Targets
-                      </span>
-                    </div>
-                    <div className="h-6 w-px bg-white/10" />
-                    <div>
-                      <span className="text-slate-400 block">Module Capacity</span>
-                      <span className="font-display text-base font-bold text-emerald-300">
-                        {save.activeUpgrades.length}/{activeShip.moduleCapacity} Slots
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bottom-Right: Next Mission Spotlight & Prominent LAUNCH MISSION Action */}
-                <div className="pointer-events-auto w-full lg:w-[440px] rounded-2xl bg-gradient-to-tl from-slate-950/95 via-slate-950/85 to-slate-900/60 ring-1 ring-white/15 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.75)] space-y-4">
-                  {/* Sector Selector Tabs */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      {([1, 2, 3] as StageId[]).map((stId) => {
-                        const selected = selectedStage === stId;
-                        return (
-                          <button
-                            key={stId}
-                            onClick={() => {
-                              onSelectStage(stId);
-                              const m = MISSION_CATALOG.find(
-                                (item) =>
-                                  item.category === 'campaign' &&
-                                  item.stageId === stId,
-                              );
-                              if (m) setLocalMissionId(m.id);
-                            }}
-                            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
-                              selected
-                                ? 'bg-cyan-500/25 text-white ring-1 ring-cyan-400/50'
-                                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                            }`}
-                          >
-                            Sector {stId}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <button
-                      onClick={() => openHubSection('missions')}
-                      className="text-xs font-medium text-cyan-300 hover:text-cyan-200 transition cursor-pointer"
-                    >
-                      All 13 Missions →
-                    </button>
-                  </div>
-
-                  {/* Selected Mission Details */}
-                  <div>
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
-                      <span>{STAGE_CONFIGS[activeMission.stageId].title}</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="text-amber-300 font-medium">
-                        {activeMission.hasBossFinale
-                          ? `Leviathan Alert: ${STAGE_CONFIGS[activeMission.stageId].bossName}`
-                          : 'Trench Sortie'}
-                      </span>
-                    </div>
-                    <h2 className="mt-0.5 font-display text-xl sm:text-2xl font-bold text-white">
-                      {activeMission.title}
-                    </h2>
-                    <p className="mt-1 text-xs sm:text-sm text-slate-300">
-                      {activeMission.primaryObjectiveText}
-                    </p>
-                    <div className="mt-1.5 text-xs text-slate-400">
-                      Bonus Objective: {activeMission.optionalObjectiveText}
-                    </div>
-                  </div>
-
-                  {/* Primary LAUNCH MISSION Button */}
-                  <button
-                    onClick={() => handleLaunchWithTransition(activeMission.id)}
-                    className="w-full rounded-xl bg-gradient-to-r from-cyan-400 to-sky-400 hover:from-cyan-300 hover:to-sky-300 py-3.5 px-6 font-display text-base font-bold tracking-wide text-slate-950 shadow-[0_0_35px_rgba(6,182,212,0.45)] transition cursor-pointer flex items-center justify-center gap-2.5"
-                  >
-                    <Play className="h-5 w-5 fill-current" />
-                    <span>Launch Mission</span>
-                  </button>
-                </div>
+              <div className="rounded-xl bg-slate-950/55 ring-1 ring-white/10 px-2.5 py-1 text-[10px] text-cyan-200/80">
+                Drag to Orbit · Pinch Zoom
               </div>
             </div>
-          )}
 
-          {/* PAUSE OVERLAY */}
-          {hud.mode === 'paused' && effectiveModal === 'none' && (
-            <div className="pointer-events-auto my-auto mx-auto max-w-md w-full rounded-2xl bg-slate-950/90 ring-1 ring-white/15 p-7 text-center shadow-2xl">
-              <div className="text-xs font-medium text-cyan-400">
-                Mission Paused
+            {/* Bottom Lobby Mission Quick Card */}
+            <div className="pointer-events-auto w-full max-w-2xl mx-auto rounded-3xl bg-slate-950/88 ring-1 ring-white/15 p-3 sm:p-4 backdrop-blur-xl shadow-[0_18px_50px_rgba(0,0,0,0.75)] space-y-2.5">
+              {/* Sector Chips + Quick Ship Stats */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                  {([1, 2, 3] as StageId[]).map((stId) => {
+                    const selected = selectedStage === stId;
+                    return (
+                      <button
+                        key={stId}
+                        onClick={() => {
+                          onSelectStage(stId);
+                          const m = MISSION_CATALOG.find(
+                            (item) =>
+                              item.category === 'campaign' &&
+                              item.stageId === stId,
+                          );
+                          if (m) setLocalMissionId(m.id);
+                        }}
+                        className={`min-h-[38px] rounded-xl px-3 py-1 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                          selected
+                            ? 'bg-cyan-400 text-slate-950'
+                            : 'bg-white/5 text-slate-300'
+                        }`}
+                      >
+                        Sector {stId}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-2.5 font-mono text-[11px] text-slate-300 tabular-nums shrink-0">
+                  <span>
+                    <strong className="text-emerald-300">
+                      {activeShip.baseHull}
+                    </strong>{' '}
+                    HP
+                  </span>
+                  <span>
+                    <strong className="text-cyan-300">
+                      {activeShip.baseShield}
+                    </strong>{' '}
+                    SP
+                  </span>
+                  <span>
+                    <strong className="text-amber-300">
+                      {activeShip.baseTorpedoLocks}
+                    </strong>{' '}
+                    Locks
+                  </span>
+                </div>
+              </div>
+
+              {/* Active Mission Row + Big Play Button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <button
+                  onClick={() => openHubSection('missions')}
+                  className="min-w-0 text-left flex-1 rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] px-3 py-2 transition cursor-pointer"
+                >
+                  <div className="flex items-center gap-1.5 text-[10px] font-medium text-cyan-300">
+                    <span>{STAGE_CONFIGS[activeMission.stageId].title}</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="text-amber-300 truncate">
+                      {activeMission.hasBossFinale
+                        ? `Boss: ${STAGE_CONFIGS[activeMission.stageId].bossName}`
+                        : 'Tap to switch mission'}
+                    </span>
+                  </div>
+                  <div className="font-display text-base sm:text-lg font-bold text-white truncate">
+                    {activeMission.title}
+                  </div>
+                  <div className="text-[11px] text-slate-300 truncate">
+                    {activeMission.primaryObjectiveText}
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleLaunchWithTransition(activeMission.id)}
+                  className="min-h-[52px] sm:min-w-[180px] rounded-2xl bg-gradient-to-r from-cyan-400 to-sky-400 hover:from-cyan-300 hover:to-sky-300 px-6 py-3 font-display text-base font-bold tracking-wide text-slate-950 shadow-[0_0_28px_rgba(6,182,212,0.45)] active:scale-95 transition cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
+                >
+                  <Play className="h-5 w-5 fill-current" />
+                  <span>LAUNCH</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Game Bottom Navigation Dock */}
+          <nav className="pointer-events-auto relative z-30 grid grid-cols-5 gap-1 border-t border-white/10 bg-slate-950/95 backdrop-blur-xl px-2 pt-1.5 pb-2 pb-safe px-safe">
+            {(
+              [
+                { id: 'hangar', label: 'Hangar', icon: Wrench },
+                { id: 'market', label: 'Market', icon: ShoppingBag },
+                { id: 'missions', label: 'Missions', icon: Compass },
+                {
+                  id: 'objectives',
+                  label: 'Rewards',
+                  icon: Trophy,
+                  badge: unclaimedCount.total,
+                },
+                { id: 'settings', label: 'Settings', icon: Settings },
+              ] as {
+                id: HubModalType;
+                label: string;
+                icon: React.ComponentType<{ className?: string }>;
+                badge?: number;
+              }[]
+            ).map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => openHubSection(item.id)}
+                  className="relative flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-2xl px-1 py-1.5 text-slate-300 hover:bg-white/5 hover:text-white active:scale-95 transition cursor-pointer"
+                >
+                  <Icon className="h-5 w-5 text-cyan-300" />
+                  <span className="text-[11px] font-semibold leading-none">
+                    {item.label}
+                  </span>
+                  {item.badge !== undefined && item.badge > 0 && (
+                    <span className="absolute top-1 right-2.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 px-1 font-mono text-[10px] font-black text-slate-950">
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </>
+      )}
+
+      {/* =====================================================================
+       * 3. PAUSE & MISSION DEBRIEF MOBILE SHEETS
+       * ==================================================================== */}
+      {hud.mode === 'paused' && effectiveModal === 'none' && (
+        <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-slate-950/65 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-slate-950/95 ring-1 ring-white/15 p-5 sm:p-6 text-center shadow-2xl">
+            <div className="text-xs font-semibold uppercase tracking-wider text-cyan-400">
+              Mission Paused
+            </div>
+            <h2 className="mt-1 font-display text-xl font-bold text-white">
+              {hud.missionTitle}
+            </h2>
+            <p className="mt-1 text-xs text-slate-300">
+              {hud.primaryObjectiveText}
+            </p>
+
+            <div className="mt-5 flex flex-col gap-2.5">
+              <button
+                onClick={onResumeGame}
+                className="min-h-[48px] w-full rounded-2xl bg-cyan-400 hover:bg-cyan-300 px-5 py-3 font-display text-sm font-bold text-slate-950 active:scale-95 transition cursor-pointer"
+              >
+                Resume Mission
+              </button>
+              <button
+                onClick={() => openHubSection('settings')}
+                className="min-h-[48px] w-full rounded-2xl bg-white/5 hover:bg-white/10 ring-1 ring-white/10 px-5 py-2.5 text-xs font-semibold text-slate-200 active:scale-95 transition cursor-pointer"
+              >
+                Controls & Settings
+              </button>
+              <button
+                onClick={() => onStartMission(hud.missionId)}
+                className="min-h-[48px] w-full rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 ring-1 ring-amber-400/35 px-5 py-2.5 text-xs font-semibold text-amber-200 active:scale-95 transition cursor-pointer"
+              >
+                Restart Mission
+              </button>
+              <button
+                onClick={onReturnToTitle}
+                className="min-h-[48px] w-full rounded-2xl bg-white/5 hover:bg-white/10 px-5 py-2.5 text-xs font-medium text-slate-400 hover:text-white active:scale-95 transition cursor-pointer"
+              >
+                Return to Command Berth
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(hud.mode === 'stage_clear' ||
+        hud.mode === 'victory' ||
+        hud.mode === 'game_over') &&
+        effectiveModal === 'none' && (
+          <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-3xl bg-slate-950/95 ring-1 ring-white/15 p-5 sm:p-6 text-center shadow-[0_0_80px_rgba(0,0,0,0.85)]">
+              <div
+                className={`text-xs font-semibold uppercase tracking-wider ${
+                  hud.mode === 'game_over' ? 'text-rose-400' : 'text-emerald-400'
+                }`}
+              >
+                {hud.mode === 'game_over'
+                  ? 'Hull Compromised'
+                  : 'Mission Accomplished'}
               </div>
               <h2 className="mt-1 font-display text-2xl font-bold text-white">
-                {hud.missionTitle}
+                {hud.lastMissionResult?.missionTitle || hud.missionTitle}
               </h2>
-              <p className="mt-1 text-xs sm:text-sm text-slate-300">
-                {hud.primaryObjectiveText}
-              </p>
 
-              <div className="mt-6 flex flex-col gap-2.5">
-                <button
-                  onClick={onResumeGame}
-                  className="w-full rounded-xl bg-cyan-400 hover:bg-cyan-300 px-5 py-3 font-display text-sm font-bold text-slate-950 transition cursor-pointer"
-                >
-                  Resume Mission (Esc)
-                </button>
-                <button
-                  onClick={() => openHubSection('settings')}
-                  className="w-full rounded-xl bg-white/5 hover:bg-white/10 ring-1 ring-white/10 px-5 py-2.5 text-xs sm:text-sm font-medium text-slate-200 transition cursor-pointer"
-                >
-                  Controls & System Settings
-                </button>
-                <button
-                  onClick={() => onStartMission(hud.missionId)}
-                  className="w-full rounded-xl bg-amber-500/15 hover:bg-amber-500/25 ring-1 ring-amber-400/30 px-5 py-2.5 text-xs sm:text-sm font-medium text-amber-200 transition cursor-pointer"
-                >
-                  Restart Mission
-                </button>
-                <button
-                  onClick={onReturnToTitle}
-                  className="w-full rounded-xl bg-white/5 hover:bg-white/10 px-5 py-2.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white transition cursor-pointer"
-                >
-                  Return to Command Berth
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* VICTORY / STAGE CLEAR / DEFEAT DEBRIEF OVERLAY */}
-          {(hud.mode === 'stage_clear' ||
-            hud.mode === 'victory' ||
-            hud.mode === 'game_over') &&
-            effectiveModal === 'none' && (
-              <div className="pointer-events-auto my-auto mx-auto max-w-xl w-full rounded-2xl bg-slate-950/90 ring-1 ring-white/15 p-7 text-center shadow-[0_0_80px_rgba(0,0,0,0.85)]">
-                <div
-                  className={`text-xs font-semibold tracking-wider ${
-                    hud.mode === 'game_over'
-                      ? 'text-rose-400'
-                      : 'text-emerald-400'
-                  }`}
-                >
-                  {hud.mode === 'game_over'
-                    ? 'Submersible Hull Compromised'
-                    : 'Mission Accomplished'}
-                </div>
-                <h2 className="mt-1 font-display text-3xl font-bold text-white">
-                  {hud.lastMissionResult?.missionTitle || hud.missionTitle}
-                </h2>
-
-                {hud.lastMissionResult && (
-                  <div className="mt-5 space-y-4 text-left">
-                    <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                      <div>
-                        <div className="text-xs text-slate-400">Final Score</div>
-                        <div className="mt-0.5 font-display text-2xl font-bold text-white tabular-nums">
-                          {hud.lastMissionResult.score.toLocaleString()} pts
-                        </div>
-                        <div className="mt-1 text-xs text-slate-300 tabular-nums">
-                          Accuracy {hud.lastMissionResult.accuracyPct}% · Hull{' '}
-                          {hud.lastMissionResult.hullRemainingPct}%
-                        </div>
+              {hud.lastMissionResult && (
+                <div className="mt-4 space-y-3 text-left">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <div>
+                      <div className="text-xs text-slate-400">Final Score</div>
+                      <div className="mt-0.5 font-display text-xl font-bold text-white tabular-nums">
+                        {hud.lastMissionResult.score.toLocaleString()} pts
                       </div>
-                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-400/15 ring-2 ring-amber-400 font-display text-2xl font-black text-amber-300">
-                        {hud.lastMissionResult.medalRank}
+                      <div className="mt-0.5 text-xs text-slate-300 tabular-nums">
+                        Accuracy {hud.lastMissionResult.accuracyPct}% · Hull{' '}
+                        {hud.lastMissionResult.hullRemainingPct}%
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-3 gap-4 text-center tabular-nums">
-                      <div>
-                        <div className="text-xs text-slate-400">Credits</div>
-                        <div className="mt-0.5 font-display text-lg font-bold text-amber-300">
-                          +{hud.lastMissionResult.creditsEarned} CR
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-slate-400">Abyssal Alloy</div>
-                        <div className="mt-0.5 font-display text-lg font-bold text-fuchsia-300">
-                          +{hud.lastMissionResult.materialsEarned} Alloy
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-slate-400">Pilot XP</div>
-                        <div className="mt-0.5 font-display text-lg font-bold text-cyan-300">
-                          +{hud.lastMissionResult.xpEarned} XP
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-3 border-t border-white/10 text-xs">
-                      <span className="text-slate-300">
-                        Bonus: {hud.lastMissionResult.optionalObjectiveText}
-                      </span>
-                      <span
-                        className={
-                          hud.lastMissionResult.optionalCompleted
-                            ? 'text-emerald-400 font-semibold'
-                            : 'text-slate-500'
-                        }
-                      >
-                        {hud.lastMissionResult.optionalCompleted
-                          ? 'Completed (+150 CR)'
-                          : 'Incomplete'}
-                      </span>
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-400/15 ring-2 ring-amber-400 font-display text-2xl font-black text-amber-300">
+                      {hud.lastMissionResult.medalRank}
                     </div>
                   </div>
-                )}
 
-                <div className="mt-6 flex flex-wrap justify-center gap-2.5">
-                  {hud.mode !== 'game_over' && (
-                    <button
-                      onClick={() => {
-                        const nextId = getRecommendedNextMissionId(save);
-                        onStartMission(nextId);
-                      }}
-                      className="rounded-xl bg-emerald-400 hover:bg-emerald-300 px-5 py-3 font-display text-sm font-bold text-slate-950 transition cursor-pointer"
+                  <div className="grid grid-cols-3 gap-2 text-center tabular-nums">
+                    <div className="rounded-2xl bg-white/[0.04] p-2.5">
+                      <div className="text-[11px] text-slate-400">Credits</div>
+                      <div className="mt-0.5 font-display text-base font-bold text-amber-300">
+                        +{hud.lastMissionResult.creditsEarned}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-white/[0.04] p-2.5">
+                      <div className="text-[11px] text-slate-400">Alloy</div>
+                      <div className="mt-0.5 font-display text-base font-bold text-fuchsia-300">
+                        +{hud.lastMissionResult.materialsEarned}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-white/[0.04] p-2.5">
+                      <div className="text-[11px] text-slate-400">Pilot XP</div>
+                      <div className="mt-0.5 font-display text-base font-bold text-cyan-300">
+                        +{hud.lastMissionResult.xpEarned}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs">
+                    <span className="text-slate-300 truncate pr-2">
+                      Bonus: {hud.lastMissionResult.optionalObjectiveText}
+                    </span>
+                    <span
+                      className={`shrink-0 ${
+                        hud.lastMissionResult.optionalCompleted
+                          ? 'text-emerald-400 font-semibold'
+                          : 'text-slate-500'
+                      }`}
                     >
-                      Launch Next Mission
-                    </button>
-                  )}
+                      {hud.lastMissionResult.optionalCompleted
+                        ? '+150 CR'
+                        : 'Incomplete'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-5 flex flex-col gap-2">
+                {hud.mode !== 'game_over' && (
                   <button
-                    onClick={() => onStartMission(hud.missionId)}
-                    className="rounded-xl bg-cyan-400 hover:bg-cyan-300 px-5 py-3 font-display text-sm font-bold text-slate-950 transition cursor-pointer"
+                    onClick={() => {
+                      const nextId = getRecommendedNextMissionId(save);
+                      onStartMission(nextId);
+                    }}
+                    className="min-h-[48px] w-full rounded-2xl bg-emerald-400 hover:bg-emerald-300 px-5 py-3 font-display text-sm font-bold text-slate-950 active:scale-95 transition cursor-pointer"
                   >
-                    Replay Mission
+                    Launch Next Mission
                   </button>
+                )}
+                <button
+                  onClick={() => onStartMission(hud.missionId)}
+                  className="min-h-[48px] w-full rounded-2xl bg-cyan-400 hover:bg-cyan-300 px-5 py-3 font-display text-sm font-bold text-slate-950 active:scale-95 transition cursor-pointer"
+                >
+                  Replay Mission
+                </button>
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => openHubSection('hangar')}
-                    className="rounded-xl bg-white/10 hover:bg-white/15 px-4 py-3 text-xs sm:text-sm font-medium text-white transition cursor-pointer"
+                    className="min-h-[44px] rounded-2xl bg-white/10 hover:bg-white/15 px-3 text-xs font-semibold text-white active:scale-95 transition cursor-pointer"
                   >
                     Hangar
                   </button>
                   <button
                     onClick={() => openHubSection('market')}
-                    className="rounded-xl bg-white/10 hover:bg-white/15 px-4 py-3 text-xs sm:text-sm font-medium text-amber-200 transition cursor-pointer"
+                    className="min-h-[44px] rounded-2xl bg-white/10 hover:bg-white/15 px-3 text-xs font-semibold text-amber-200 active:scale-95 transition cursor-pointer"
                   >
                     Market
                   </button>
                   <button
                     onClick={onReturnToTitle}
-                    className="rounded-xl bg-white/5 hover:bg-white/10 px-4 py-3 text-xs sm:text-sm font-medium text-slate-300 transition cursor-pointer"
+                    className="min-h-[44px] rounded-2xl bg-white/5 hover:bg-white/10 px-3 text-xs font-semibold text-slate-300 active:scale-95 transition cursor-pointer"
                   >
-                    Return to Berth
+                    Berth
                   </button>
                 </div>
               </div>
-            )}
-
-          {/* =================================================================
-           * 3. FRAMELESS FLOATING CONTEXTUAL OVERLAYS (Keeping 3D Ship Interactive)
-           * ================================================================ */}
-          {effectiveModal === 'hangar' && (
-            <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
-              <HangarView
-                save={save}
-                onSelectShip={onSelectShip}
-                onUnlockShip={onBuyShip}
-                onSelectPrimaryWeapon={(id: PrimaryWeaponId) => onSelectWeapon(id)}
-                onSelectSecondaryWeapon={(id: SecondaryWeaponId) =>
-                  onSelectWeapon(id)
-                }
-                onToggleUpgrade={onBuyOrToggleUpgrade}
-                onUpgradeTier={onUpgradeModuleTier}
-                onSelectCosmetic={onSelectCosmetic}
-                onUnlockCosmetic={onSelectCosmetic}
-                onPreviewShip={onPreviewShip}
-                onOpenMarket={() => openHubSection('market')}
-                onClose={closeModal}
-              />
             </div>
-          )}
+          </div>
+        )}
 
-          {effectiveModal === 'market' && (
-            <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
-              <AbyssalMarket
-                save={save}
-                onBuyUpgrade={onBuyOrToggleUpgrade}
-                onToggleEquipUpgrade={onBuyOrToggleUpgrade}
-                onUpgradeTier={onUpgradeModuleTier}
-                onBuyWeapon={onBuyWeapon}
-                onSelectPrimaryWeapon={(id: PrimaryWeaponId) => onSelectWeapon(id)}
-                onSelectSecondaryWeapon={(id: SecondaryWeaponId) =>
-                  onSelectWeapon(id)
-                }
-                onUnlockShip={onBuyShip}
-                onSelectShip={onSelectShip}
-                onUnlockCosmetic={onSelectCosmetic}
-                onSelectCosmetic={onSelectCosmetic}
-                onPreviewShip={onPreviewShip}
-                onRefundAllUpgrades={onRefundAllUpgrades}
-                onClaimSupplyGrant={onClaimSupplyGrant}
-                onExchangeCreditsForCore={onExchangeCreditsForCore}
-                onClose={closeModal}
-              />
-            </div>
-          )}
+      {/* =====================================================================
+       * 4. MOBILE GAME SCREEN MODALS (Hangar, Market, Missions, Rewards, etc.)
+       * ==================================================================== */}
+      {hud.mode !== 'playing' && effectiveModal === 'hangar' && (
+        <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
+          <HangarView
+            save={save}
+            onSelectShip={onSelectShip}
+            onUnlockShip={onBuyShip}
+            onSelectPrimaryWeapon={(id: PrimaryWeaponId) => onSelectWeapon(id)}
+            onSelectSecondaryWeapon={(id: SecondaryWeaponId) =>
+              onSelectWeapon(id)
+            }
+            onToggleUpgrade={onBuyOrToggleUpgrade}
+            onUpgradeTier={onUpgradeModuleTier}
+            onSelectCosmetic={onSelectCosmetic}
+            onUnlockCosmetic={onSelectCosmetic}
+            onPreviewShip={onPreviewShip}
+            onOpenMarket={() => openHubSection('market')}
+            onClose={closeModal}
+          />
+        </div>
+      )}
 
-          {effectiveModal === 'missions' && (
-            <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
-              <MissionSelectModal
-                save={save}
-                selectedStage={selectedStage}
-                selectedMissionId={localMissionId}
-                onSelectStage={onSelectStage}
-                onSelectMission={(mId: string) => setLocalMissionId(mId)}
-                onSelectDifficulty={onSetDifficulty}
-                onLaunchMission={(mission: MissionDefinition) => {
-                  handleLaunchWithTransition(mission.id);
-                }}
-                onClose={closeModal}
-              />
-            </div>
-          )}
+      {hud.mode !== 'playing' && effectiveModal === 'market' && (
+        <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
+          <AbyssalMarket
+            save={save}
+            onBuyUpgrade={onBuyOrToggleUpgrade}
+            onToggleEquipUpgrade={onBuyOrToggleUpgrade}
+            onUpgradeTier={onUpgradeModuleTier}
+            onBuyWeapon={onBuyWeapon}
+            onSelectPrimaryWeapon={(id: PrimaryWeaponId) => onSelectWeapon(id)}
+            onSelectSecondaryWeapon={(id: SecondaryWeaponId) =>
+              onSelectWeapon(id)
+            }
+            onUnlockShip={onBuyShip}
+            onSelectShip={onSelectShip}
+            onUnlockCosmetic={onSelectCosmetic}
+            onSelectCosmetic={onSelectCosmetic}
+            onPreviewShip={onPreviewShip}
+            onRefundAllUpgrades={onRefundAllUpgrades}
+            onClaimSupplyGrant={onClaimSupplyGrant}
+            onExchangeCreditsForCore={onExchangeCreditsForCore}
+            onClose={closeModal}
+          />
+        </div>
+      )}
 
-          {effectiveModal === 'objectives' && (
-            <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
-              <ObjectivesModal
-                save={save}
-                onClaimDaily={onClaimDaily}
-                onClaimAchievement={onClaimAchievement}
-                onOpenProfile={() => openHubSection('profile')}
-                onClose={closeModal}
-              />
-            </div>
-          )}
+      {hud.mode !== 'playing' && effectiveModal === 'missions' && (
+        <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
+          <MissionSelectModal
+            save={save}
+            selectedStage={selectedStage}
+            selectedMissionId={localMissionId}
+            onSelectStage={onSelectStage}
+            onSelectMission={(mId: string) => setLocalMissionId(mId)}
+            onSelectDifficulty={onSetDifficulty}
+            onLaunchMission={(mission: MissionDefinition) => {
+              handleLaunchWithTransition(mission.id);
+            }}
+            onClose={closeModal}
+          />
+        </div>
+      )}
 
-          {effectiveModal === 'profile' && (
-            <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
-              <PilotProfileModal
-                save={save}
-                onUpdateCallsign={onUpdateCallsign}
-                onOpenObjectives={() => openHubSection('objectives')}
-                onClose={closeModal}
-              />
-            </div>
-          )}
+      {hud.mode !== 'playing' && effectiveModal === 'objectives' && (
+        <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
+          <ObjectivesModal
+            save={save}
+            onClaimDaily={onClaimDaily}
+            onClaimAchievement={onClaimAchievement}
+            onOpenProfile={() => openHubSection('profile')}
+            onClose={closeModal}
+          />
+        </div>
+      )}
 
-          {effectiveModal === 'settings' && (
-            <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
-              <SettingsModal
-                settings={save.settings}
-                onUpdateSettings={onUpdateSettings}
-                onResetSave={() => {
-                  onResetSaveData();
-                  closeModal();
-                }}
-                onClose={closeModal}
-              />
-            </div>
-          )}
-        </>
+      {hud.mode !== 'playing' && effectiveModal === 'profile' && (
+        <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
+          <PilotProfileModal
+            save={save}
+            onUpdateCallsign={onUpdateCallsign}
+            onOpenObjectives={() => openHubSection('objectives')}
+            onClose={closeModal}
+          />
+        </div>
+      )}
+
+      {hud.mode !== 'playing' && effectiveModal === 'settings' && (
+        <div className="pointer-events-none relative z-20 flex-1 overflow-hidden">
+          <SettingsModal
+            settings={save.settings}
+            onUpdateSettings={onUpdateSettings}
+            onResetSave={() => {
+              onResetSaveData();
+              closeModal();
+            }}
+            onClose={closeModal}
+          />
+        </div>
       )}
     </div>
   );

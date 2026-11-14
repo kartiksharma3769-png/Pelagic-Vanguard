@@ -46,6 +46,8 @@ import {
   createBossMesh,
   createEnemyMesh,
   createMaterialBank,
+  createPlayerPrimaryBoltMesh,
+  createPlayerTorpedoMesh,
   createVanguardShip,
 } from '../game/models';
 import { soundEngine } from '../game/audio';
@@ -89,7 +91,7 @@ interface ProjectileEntity {
   active: boolean;
   isPlayer: boolean;
   isTorpedo: boolean;
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   targetEnemyId: number | null;
@@ -240,6 +242,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     container.innerHTML = '';
+    renderer.domElement.style.touchAction = 'none';
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -543,26 +546,19 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       }
     }
 
-    // 8. Pooled Projectiles (Player Cavitation Bolts, Homing Torpedoes, Enemy Bio-Plasma)
+    // 8. Pooled Projectiles (Composite 3D Fire Bolts, Finned Homing Torpedoes, Enemy Bio-Plasma)
     const PROJECTILE_POOL_SIZE = 90;
-    const boltGeo = new THREE.CapsuleGeometry(0.14, 1.35, 4, 8);
-    boltGeo.rotateX(Math.PI / 2);
-    const torpedoGeo = new THREE.ConeGeometry(0.28, 1.6, 8);
-    torpedoGeo.rotateX(-Math.PI / 2);
     const enemyPlasmaGeo = new THREE.OctahedronGeometry(0.42, 1);
 
     const projectiles: ProjectileEntity[] = [];
     for (let i = 0; i < PROJECTILE_POOL_SIZE; i++) {
       const isTorpSlot = i >= 50 && i < 66;
       const isEnemySlot = i >= 66;
-      const mesh = new THREE.Mesh(
-        isTorpSlot ? torpedoGeo : isEnemySlot ? enemyPlasmaGeo : boltGeo,
-        isTorpSlot
-          ? mats.biolumeAmber
-          : isEnemySlot
-            ? mats.biolumeCrimson
-            : mats.biolumeCyan,
-      );
+      const mesh: THREE.Object3D = isTorpSlot
+        ? createPlayerTorpedoMesh(mats)
+        : isEnemySlot
+          ? new THREE.Mesh(enemyPlasmaGeo, mats.biolumeCrimson)
+          : createPlayerPrimaryBoltMesh(mats);
       mesh.visible = false;
       scene.add(mesh);
       projectiles.push({
@@ -723,6 +719,22 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
     function persistSave() {
       savePlayerData(playerSave);
+    }
+
+    function triggerHaptic(pattern: number | number[]) {
+      if (
+        !playerSave.settings.hapticsEnabled ||
+        playerSave.settings.reducedMotion
+      ) {
+        return;
+      }
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        try {
+          navigator.vibrate(pattern);
+        } catch {
+          // Ignore vibration permission errors
+        }
+      }
     }
 
     function applyAudioAndGraphicsSettings() {
@@ -1333,7 +1345,13 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       sim.hull = Math.min(sim.maxHull, sim.hull);
       sim.shield = Math.min(sim.maxShield, sim.shield);
 
-      vanguard.setAppearance(ship.id, cosmetic.trimColorHex);
+      vanguard.setAppearance(ship.id, cosmetic.trimColorHex, {
+        primaryWeaponId: playerSave.equippedPrimaryWeapon,
+        secondaryWeaponId: playerSave.equippedSecondaryWeapon,
+        activeUpgrades: playerSave.activeUpgrades,
+        upgradeTiers: playerSave.upgradeTiers,
+        pilotLevel: playerSave.pilotLevel,
+      });
     }
 
     function buyOrToggleUpgrade(upgradeId: UpgradeId) {
@@ -1618,6 +1636,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       sonarWaveMesh.visible = true;
 
       soundEngine.playTacticalSonarPulse();
+      triggerHaptic(24);
       spawnParticleBurst(vanguard.group.position, 0x22d3ee, 20, 18);
 
       // Acoustically dampen nearby incoming bio-plasma projectiles by 45%
@@ -1689,6 +1708,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
               ? -1
               : 1;
         soundEngine.playBarrelRoll();
+        triggerHaptic(18);
         spawnParticleBurst(vanguard.group.position, 0x38bdf8, 16, 14);
 
         // If Voltaic Shield Capacitor upgrade is active, EMP clear nearby enemy plasma bolts
@@ -1749,6 +1769,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
       if (firedAny) {
         sim.shotsFired += 2;
+        vanguard.triggerWeaponFire(false);
         soundEngine.playLaserShot(overcharged);
       }
     }
@@ -1811,11 +1832,14 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       if (launched > 0) {
         sim.shotsFired += launched;
         playerSave.stats.totalTorpedoesFired += launched;
+        vanguard.triggerWeaponFire(true);
+        spawnParticleBurst(vanguard.group.position, 0xff7b00, 14, 16);
         const salvoReloadFactor = sim.upgrades.includes('quad_torpedo_salvo')
           ? Math.max(0.55, 1 - 0.22 * getModuleTierMult('quad_torpedo_salvo'))
           : 1;
         sim.torpedoCooldown = sim.shipSecondaryCooldown * salvoReloadFactor;
         soundEngine.playTorpedoLaunch(launched);
+        triggerHaptic([16, 20, 26]);
         sim.lockedTargetIds = [];
         enemies.forEach((e) => {
           e.locked = false;
@@ -1874,6 +1898,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       );
       sim.hitstopTimer = 0.045;
       soundEngine.playImpact(true);
+      triggerHaptic([32, 18, 32]);
       spawnParticleBurst(vanguard.group.position, 0xf43f5e, 18, 16);
 
       // Flash shield wireframe
@@ -1918,15 +1943,15 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       if (activeMission.objectiveType === 'flight_school') {
         if (sim.shotsFired < 4) {
           flightSchoolStep =
-            'STEP 1/4: Fire Primary Bio-Plasma Cannons (Left-Click / J / Fire Button)';
+            'DRILL 1/4: Hold FIRE (or Auto-Fire) to test Bio-Plasma Cannons';
         } else if (sim.sonarPulsesUsedThisSortie < 1) {
           flightSchoolStep =
-            'STEP 2/4: Activate Tactical Sonar Pulse (Press Q / Sonar Button)';
+            'DRILL 2/4: Tap SONAR to scan hazards & reveal weak points';
         } else if (sim.rollsExecutedThisSortie < 1) {
           flightSchoolStep =
-            'STEP 3/4: Execute Hydro-Barrel Roll Evade (Press Space / Roll Button)';
+            'DRILL 3/4: Tap EVADE to perform a Hydro-Barrel Roll';
         } else {
-          flightSchoolStep = `STEP 4/4: Lock & Destroy Training Targets (${sim.enemiesDefeated}/${activeMission.targetKillsRequired})`;
+          flightSchoolStep = `DRILL 4/4: Lock & Destroy Training Targets (${sim.enemiesDefeated}/${activeMission.targetKillsRequired})`;
         }
       }
 
@@ -2091,7 +2116,13 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         shipId !== lastPreviewedShipId ||
         targetCosmeticId !== lastPreviewedCosmeticId;
 
-      vanguard.setAppearance(shipId, cosmetic.trimColorHex);
+      vanguard.setAppearance(shipId, cosmetic.trimColorHex, {
+        primaryWeaponId: playerSave.equippedPrimaryWeapon,
+        secondaryWeaponId: playerSave.equippedSecondaryWeapon,
+        activeUpgrades: playerSave.activeUpgrades,
+        upgradeTiers: playerSave.upgradeTiers,
+        pilotLevel: playerSave.pilotLevel,
+      });
       dockRingInnerMat.color.setHex(cosmetic.trimColorHex);
       shipPointLight.color.setHex(cosmetic.trimColorHex);
 
@@ -2156,26 +2187,46 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       summonBossNow,
     });
 
-    // 12. Input Handling: Continuous `held` vs Edge-Triggered `justPressed`
+    // 12. Mobile-First Touch & Pointer Input Handling (Orbit, Pinch-Zoom, Touch-Drag Aim & Tap-Lock)
     const heldKeys = new Set<string>();
     let pointerFiring = false;
     let isDraggingHangarShip = false;
+    let isTouchAimDragging = false;
+    let touchAimPointerId: number | null = null;
+    let touchAimDownTime = 0;
+    let touchAimDownX = 0;
+    let touchAimDownY = 0;
     let dragLastClientX = 0;
     let dragLastClientY = 0;
     let hangarUserYaw = -0.35;
     let hangarUserPitch = 0.08;
     let hangarZoom = 1.0;
+    let hangarCenteredInspect = false;
     const camLookTarget = new THREE.Vector3(0, 0, 0);
+    const activeCanvasPointers = new Map<number, { x: number; y: number }>();
+    let lastPinchDist: number | null = null;
+
+    const getPinchDistance = (): number | null => {
+      if (activeCanvasPointers.size < 2) return null;
+      const pts = Array.from(activeCanvasPointers.values());
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    };
 
     const handleHangarCameraEvent = (ev: Event) => {
       const custom = ev as CustomEvent<{
-        action: 'zoomIn' | 'zoomOut' | 'resetView' | 'testThrusters';
+        action:
+          | 'zoomIn'
+          | 'zoomOut'
+          | 'resetView'
+          | 'testThrusters'
+          | 'centerInspect'
+          | 'splitInspect';
       }>;
       const action = custom.detail?.action;
       if (action === 'zoomIn') {
-        hangarZoom = THREE.MathUtils.clamp(hangarZoom - 0.14, 0.68, 1.42);
+        hangarZoom = THREE.MathUtils.clamp(hangarZoom - 0.14, 0.65, 1.48);
       } else if (action === 'zoomOut') {
-        hangarZoom = THREE.MathUtils.clamp(hangarZoom + 0.14, 0.68, 1.42);
+        hangarZoom = THREE.MathUtils.clamp(hangarZoom + 0.14, 0.65, 1.48);
       } else if (action === 'resetView') {
         hangarZoom = 1.0;
         hangarUserYaw = -0.38;
@@ -2187,6 +2238,11 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         shieldMat.opacity = 0.5;
         spawnParticleBurst(vanguard.group.position, 0x22d3ee, 28, 18);
         soundEngine.playBarrelRoll();
+        triggerHaptic([15, 25, 20]);
+      } else if (action === 'centerInspect') {
+        hangarCenteredInspect = true;
+      } else if (action === 'splitInspect') {
+        hangarCenteredInspect = false;
       }
     };
     window.addEventListener('pelagic-hangar-camera', handleHangarCameraEvent);
@@ -2195,19 +2251,15 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       if (
         modeRef.current === 'hangar' ||
         modeRef.current === 'market' ||
-        modeRef.current === 'title'
+        modeRef.current === 'title' ||
+        modeRef.current === 'campaign_map' ||
+        modeRef.current === 'briefing'
       ) {
-        // Only zoom if cursor is on the left 62% showroom side (or anywhere in title mode)
-        if (
-          modeRef.current === 'title' ||
-          e.clientX < window.innerWidth * 0.62
-        ) {
-          hangarZoom = THREE.MathUtils.clamp(
-            hangarZoom + e.deltaY * 0.0012,
-            0.68,
-            1.42,
-          );
-        }
+        hangarZoom = THREE.MathUtils.clamp(
+          hangarZoom + e.deltaY * 0.0012,
+          0.65,
+          1.48,
+        );
       }
     };
 
@@ -2215,50 +2267,18 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       if (e.repeat) return;
       heldKeys.add(e.code);
 
-      if (modeRef.current === 'title') {
-        if (e.code === 'Enter' || e.code === 'Space') {
-          e.preventDefault();
-          startStage(selectedStageRef.current, true);
-        } else if (e.code === 'KeyM') {
-          e.preventDefault();
-          soundEngine.playSonarPing(780);
-          syncHudSnapshot('market');
-        }
-        return;
-      }
-
-      if (
-        modeRef.current === 'market' ||
-        modeRef.current === 'hangar' ||
-        modeRef.current === 'campaign_map' ||
-        modeRef.current === 'briefing' ||
-        modeRef.current === 'rewards' ||
-        modeRef.current === 'profile' ||
-        modeRef.current === 'settings'
-      ) {
-        if (e.code === 'Escape') {
-          e.preventDefault();
-          soundEngine.playSonarPing(660);
-          recomputeLoadoutStats();
-          syncHudSnapshot('title');
-        }
-        return;
-      }
-
       if (e.code === 'Escape') {
         e.preventDefault();
         if (modeRef.current === 'playing') {
           syncHudSnapshot('paused');
         } else if (modeRef.current === 'paused') {
           syncHudSnapshot('playing');
+        } else if (modeRef.current !== 'title') {
+          soundEngine.playSonarPing(660);
+          recomputeLoadoutStats();
+          syncHudSnapshot('title');
         }
         return;
-      }
-
-      if (e.code === 'KeyC') {
-        onToggleCameraRef.current();
-      } else if (e.code === 'KeyH') {
-        onToggleDockRef.current();
       }
 
       if (modeRef.current !== 'playing') return;
@@ -2272,9 +2292,8 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       } else if (e.code === 'KeyQ' || e.code === 'KeyF') {
         e.preventDefault();
         executeTacticalSonar();
-      } else if (e.code === 'KeyB') {
-        e.preventDefault();
-        summonBossNow();
+      } else if (e.code === 'KeyC') {
+        onToggleCameraRef.current();
       }
     };
 
@@ -2284,8 +2303,12 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
     const handleWindowBlur = () => {
       heldKeys.clear();
+      activeCanvasPointers.clear();
+      lastPinchDist = null;
       pointerFiring = false;
       isDraggingHangarShip = false;
+      isTouchAimDragging = false;
+      touchAimPointerId = null;
       touchFiring = false;
       touchMoveX = 0;
       touchMoveY = 0;
@@ -2294,38 +2317,140 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       }
     };
 
+    const tryTapLockNearestTarget = (clientX: number, clientY: number) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const tapX = clientX - rect.left;
+      const tapY = clientY - rect.top;
+
+      let bestId: number | null = null;
+      let bestDist = 90;
+
+      const checkTarget = (id: number, worldPos: THREE.Vector3) => {
+        _vec3A.copy(worldPos).project(camera);
+        if (_vec3A.z > 1) return;
+        const sx = (_vec3A.x * 0.5 + 0.5) * rect.width;
+        const sy = (-(_vec3A.y * 0.5) + 0.5) * rect.height;
+        const d = Math.hypot(sx - tapX, sy - tapY);
+        if (d < bestDist) {
+          bestDist = d;
+          bestId = id;
+        }
+      };
+
+      enemies.forEach((e) => {
+        if (e.active) checkTarget(e.id, e.group.position);
+      });
+      if (bossObj && bossObj.active) {
+        bossObj.appendages.forEach((app) => {
+          if (!app.destroyed) checkTarget(app.numericId, app.worldPos);
+        });
+        checkTarget(bossObj.id, bossObj.group.position);
+      }
+
+      if (bestId !== null) {
+        if (!sim.lockedTargetIds.includes(bestId)) {
+          if (sim.lockedTargetIds.length >= sim.maxLocks) {
+            sim.lockedTargetIds.shift();
+          }
+          sim.lockedTargetIds.push(bestId);
+          soundEngine.playSonarPing(820);
+          triggerHaptic(12);
+        }
+        // Snap reticle smoothly toward tapped position
+        sim.aimX = THREE.MathUtils.clamp((tapX / rect.width) * 2 - 1, -0.92, 0.92);
+        sim.aimY = THREE.MathUtils.clamp(-((tapY / rect.height) * 2 - 1), -0.85, 0.85);
+      }
+    };
+
     const handlePointerMove = (e: PointerEvent) => {
-      if (isDraggingHangarShip && modeRef.current !== 'playing') {
+      if (activeCanvasPointers.has(e.pointerId)) {
+        activeCanvasPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+
+      if (modeRef.current !== 'playing') {
+        if (activeCanvasPointers.size >= 2) {
+          const dist = getPinchDistance();
+          if (dist !== null && lastPinchDist !== null) {
+            const delta = lastPinchDist - dist;
+            hangarZoom = THREE.MathUtils.clamp(
+              hangarZoom + delta * 0.0035,
+              0.65,
+              1.48,
+            );
+          }
+          lastPinchDist = dist;
+          return;
+        }
+        if (isDraggingHangarShip) {
+          const dx = e.clientX - dragLastClientX;
+          const dy = e.clientY - dragLastClientY;
+          dragLastClientX = e.clientX;
+          dragLastClientY = e.clientY;
+          hangarUserYaw += dx * 0.009;
+          hangarUserPitch = THREE.MathUtils.clamp(
+            hangarUserPitch + dy * 0.0055,
+            -0.32,
+            0.42,
+          );
+        }
+        return;
+      }
+
+      // In-flight mobile touch-drag aiming on the open 3D screen
+      if (isTouchAimDragging && touchAimPointerId === e.pointerId) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
         const dx = e.clientX - dragLastClientX;
         const dy = e.clientY - dragLastClientY;
         dragLastClientX = e.clientX;
         dragLastClientY = e.clientY;
-        hangarUserYaw += dx * 0.009;
-        hangarUserPitch = THREE.MathUtils.clamp(
-          hangarUserPitch + dy * 0.0055,
-          -0.32,
-          0.42,
+        const sens = (playerSave.settings.joystickSensitivity / 100) * 1.65;
+        sim.aimX = THREE.MathUtils.clamp(
+          sim.aimX + (dx / rect.width) * 2 * sens,
+          -0.95,
+          0.95,
         );
+        sim.aimY = THREE.MathUtils.clamp(
+          sim.aimY - (dy / rect.height) * 2 * sens,
+          -0.88,
+          0.88,
+        );
+      } else if (e.pointerType === 'mouse' && !playerSave.settings.touchControlsEnabled) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const ny = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+        sim.aimX = THREE.MathUtils.clamp(nx, -0.95, 0.95);
+        sim.aimY = THREE.MathUtils.clamp(ny, -0.88, 0.88);
       }
-      if (controlSchemeRef.current === 'keyboard_only') return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const ny = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
-      sim.aimX = THREE.MathUtils.clamp(nx, -0.95, 0.95);
-      sim.aimY = THREE.MathUtils.clamp(ny, -0.88, 0.88);
     };
 
     const handlePointerDown = (e: PointerEvent) => {
+      activeCanvasPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
       if (modeRef.current !== 'playing') {
-        if (e.button === 0) {
-          isDraggingHangarShip = true;
-          dragLastClientX = e.clientX;
-          dragLastClientY = e.clientY;
+        if (activeCanvasPointers.size >= 2) {
+          lastPinchDist = getPinchDistance();
+          isDraggingHangarShip = false;
+          return;
         }
+        isDraggingHangarShip = true;
+        dragLastClientX = e.clientX;
+        dragLastClientY = e.clientY;
         return;
       }
-      if (e.button === 0) {
+
+      // In-flight touch/pointer on canvas: drag to aim, quick tap to lock enemy
+      isTouchAimDragging = true;
+      touchAimPointerId = e.pointerId;
+      touchAimDownTime = performance.now();
+      touchAimDownX = e.clientX;
+      touchAimDownY = e.clientY;
+      dragLastClientX = e.clientX;
+      dragLastClientY = e.clientY;
+
+      if (!playerSave.settings.touchControlsEnabled && e.button === 0) {
         pointerFiring = true;
       } else if (e.button === 2) {
         e.preventDefault();
@@ -2334,7 +2459,25 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     };
 
     const handlePointerUp = (e: PointerEvent) => {
-      if (e.button === 0) {
+      activeCanvasPointers.delete(e.pointerId);
+      if (activeCanvasPointers.size < 2) {
+        lastPinchDist = null;
+      }
+
+      if (modeRef.current === 'playing' && touchAimPointerId === e.pointerId) {
+        const dtMs = performance.now() - touchAimDownTime;
+        const moveDist = Math.hypot(
+          e.clientX - touchAimDownX,
+          e.clientY - touchAimDownY,
+        );
+        if (dtMs < 260 && moveDist < 18) {
+          tryTapLockNearestTarget(e.clientX, e.clientY);
+        }
+        isTouchAimDragging = false;
+        touchAimPointerId = null;
+      }
+
+      if (e.button === 0 || activeCanvasPointers.size === 0) {
         pointerFiring = false;
         isDraggingHangarShip = false;
       }
@@ -2353,6 +2496,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     domCanvas.addEventListener('pointermove', handlePointerMove);
     domCanvas.addEventListener('pointerdown', handlePointerDown);
     window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
     domCanvas.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('wheel', handleWheel, { passive: true });
 
@@ -2393,7 +2537,15 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       frameId = window.setTimeout(poll, 5);
     }
 
+    let lastFrameRenderTime = 0;
     function tick() {
+      const nowMs = performance.now();
+      if (playerSave.settings.fpsCap === 30 && nowMs - lastFrameRenderTime < 31) {
+        frameId = requestAnimationFrame(tick);
+        return;
+      }
+      lastFrameRenderTime = nowMs;
+
       const rawDt = clock.getDelta();
       const dt = Math.min(rawDt, 0.05);
       const elapsed = clock.getElapsedTime();
@@ -2415,15 +2567,10 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         thrusterSurgeTimer = Math.max(0, thrusterSurgeTimer - dt);
       }
 
-      // Animate Vanguard-IX turbine & thrusters in all states (with showroom engine flare)
-      const surgeBoost = thrusterSurgeTimer > 0 ? 2.4 : 1.0;
-      vanguard.turbineRing.rotation.z += dt * 5.8 * surgeBoost;
-      const plumePulse =
-        (0.95 + Math.sin(elapsed * 28) * 0.16) *
-        (thrusterSurgeTimer > 0 ? 1.65 : 1.0);
-      const radialFlare = thrusterSurgeTimer > 0 ? 1.32 : 1.0;
-      vanguard.thrusterLeft.scale.set(radialFlare, radialFlare, plumePulse);
-      vanguard.thrusterRight.scale.set(radialFlare, radialFlare, plumePulse);
+      // Animate all 4 ship chassis, 3-layer plasma afterburners, AWACS dish, recoil & muzzle flashes
+      const surgeBoost =
+        thrusterSurgeTimer > 0 || sim.barrelRollTimer > 0 ? 2.4 : 1.0;
+      vanguard.updateShipEffects(elapsed, dt, surgeBoost);
 
       const shieldMat = vanguard.shieldSphere
         .material as THREE.MeshBasicMaterial;
@@ -2537,59 +2684,84 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         let targetLookY = -0.05;
         let targetLookZ = 0;
 
-        if (currentMode === 'hangar') {
-          // Hero 55-65% screen-area 3D Showroom framing on the left side of landscape viewport
-          targetShipX = -0.95;
-          targetShipScale = 1.62;
+        const isCenteredMobileOrInspect =
+          hangarCenteredInspect || window.innerWidth < 1024;
+        const isPortraitViewport = window.innerHeight > window.innerWidth;
+        const portraitSheetOffsetY =
+          !hangarCenteredInspect && isPortraitViewport ? -0.72 : -0.05;
+
+        if (currentMode === 'title') {
+          targetShipX = 0;
+          targetShipScale = isPortraitViewport ? 1.15 : 1.28;
+          targetCamX = 0.25 + sim.aimX * 0.32;
+          targetCamY =
+            (isPortraitViewport ? 1.28 : 1.05) +
+            hangarUserPitch * 1.6 +
+            sim.aimY * 0.18;
+          targetCamZ = (isPortraitViewport ? 5.95 : 5.45) * hangarZoom;
+          targetLookY = isPortraitViewport ? -0.22 : -0.05;
+        } else if (currentMode === 'hangar') {
+          targetShipX = isCenteredMobileOrInspect ? 0 : -0.95;
+          targetShipScale = isCenteredMobileOrInspect
+            ? isPortraitViewport
+              ? 1.28
+              : 1.48
+            : 1.62;
           if (!isDraggingHangarShip) {
             hangarUserYaw += dt * 0.32;
           }
           targetShipYaw = hangarUserYaw;
-          targetCamX = -0.15;
+          targetCamX = isCenteredMobileOrInspect ? 0 : -0.15;
           targetCamY = 0.92 + hangarUserPitch * 2.1;
-          targetCamZ = 4.15 * hangarZoom;
-          targetLookX = -0.78;
-          targetLookY = -0.05;
+          targetCamZ =
+            (isCenteredMobileOrInspect
+              ? isPortraitViewport
+                ? 4.95
+                : 4.4
+              : 4.15) * hangarZoom;
+          targetLookX = isCenteredMobileOrInspect ? 0 : -0.78;
+          targetLookY = portraitSheetOffsetY;
           targetLookZ = 0;
         } else if (currentMode === 'market') {
-          // Showroom showcase angle on the left while Market floats on the right
-          targetShipX = -1.15;
-          targetShipScale = 1.48;
+          targetShipX = isCenteredMobileOrInspect ? 0 : -1.15;
+          targetShipScale = isCenteredMobileOrInspect
+            ? isPortraitViewport
+              ? 1.24
+              : 1.45
+            : 1.48;
           if (!isDraggingHangarShip) {
             hangarUserYaw += dt * 0.28;
           }
           targetShipYaw = hangarUserYaw;
-          targetCamX = -0.2;
+          targetCamX = isCenteredMobileOrInspect ? 0 : -0.2;
           targetCamY = 1.15 + hangarUserPitch * 1.8;
-          targetCamZ = 4.45 * hangarZoom;
-          targetLookX = -0.82;
-          targetLookY = -0.06;
+          targetCamZ = (isPortraitViewport && !hangarCenteredInspect ? 5.1 : 4.45) * hangarZoom;
+          targetLookX = isCenteredMobileOrInspect ? 0 : -0.82;
+          targetLookY = portraitSheetOffsetY;
           targetLookZ = 0;
         } else if (currentMode === 'campaign_map' || currentMode === 'briefing') {
-          // Over-the-shoulder forward launch tube perspective into the abyssal trench
-          targetShipX = -2.05;
-          targetShipScale = 1.15;
-          targetShipYaw = -0.18 + hangarUserYaw * 0.3;
-          targetCamX = -0.55;
-          targetCamY = 1.32;
-          targetCamZ = 6.15;
-          targetLookX = -0.45;
-          targetLookY = 0.0;
-          targetLookZ = -2.5;
+          targetShipX = isCenteredMobileOrInspect ? 0 : -2.05;
+          targetShipScale = isCenteredMobileOrInspect ? 1.22 : 1.15;
+          targetShipYaw = -0.18 + hangarUserYaw * 0.6;
+          targetCamX = isCenteredMobileOrInspect ? 0 : -0.55;
+          targetCamY = 1.25 + hangarUserPitch * 1.5;
+          targetCamZ = (isCenteredMobileOrInspect ? 4.8 : 6.15) * hangarZoom;
+          targetLookX = isCenteredMobileOrInspect ? 0 : -0.45;
+          targetLookY = portraitSheetOffsetY;
+          targetLookZ = isCenteredMobileOrInspect ? 0 : -2.5;
         } else if (
           currentMode === 'rewards' ||
           currentMode === 'profile' ||
           currentMode === 'settings'
         ) {
-          // Elevated command berth framing on the left
-          targetShipX = -1.65;
+          targetShipX = isCenteredMobileOrInspect ? 0 : -1.65;
           targetShipScale = 1.22;
           targetShipYaw = -0.45 + Math.sin(elapsed * 0.4) * 0.12 + hangarUserYaw;
-          targetCamX = -0.35;
+          targetCamX = isCenteredMobileOrInspect ? 0 : -0.35;
           targetCamY = 1.28;
           targetCamZ = 5.65;
-          targetLookX = -0.45;
-          targetLookY = -0.08;
+          targetLookX = isCenteredMobileOrInspect ? 0 : -0.45;
+          targetLookY = portraitSheetOffsetY;
           targetLookZ = 0;
         }
 
@@ -2760,27 +2932,60 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         moveX = THREE.MathUtils.clamp(moveX, -1, 1);
         moveY = THREE.MathUtils.clamp(moveY, -1, 1);
 
-        if (
-          controlSchemeRef.current === 'keyboard_only' ||
-          Math.abs(touchMoveX) > 0.05 ||
-          Math.abs(touchMoveY) > 0.05
-        ) {
-          sim.aimX = THREE.MathUtils.damp(
-            sim.aimX,
-            THREE.MathUtils.clamp(sim.playerX / 15 + moveX * 0.45, -0.9, 0.9),
-            8,
-            dt,
-          );
-          sim.aimY = THREE.MathUtils.damp(
-            sim.aimY,
-            THREE.MathUtils.clamp(sim.playerY / 9 + moveY * 0.45, -0.85, 0.85),
-            8,
-            dt,
-          );
-        } else if (moveX === 0 && moveY === 0) {
-          // Gentle mouse-follow assist when keys aren't overriding
-          moveX = sim.aimX * 0.65;
-          moveY = sim.aimY * 0.65;
+        if (!isTouchAimDragging) {
+          if (playerSave.settings.aimAssist) {
+            // Mobile smart target tracking: gently guide reticle toward nearest active target in front
+            let nearestWorldPos: THREE.Vector3 | null = null;
+            let bestZ = -999;
+            if (bossObj && bossObj.active) {
+              const weakApp = sim.sonarWeakPointSlot && sim.sonarWeakPointSlot !== 'core'
+                ? bossObj.appendages.find((a) => a.slot === sim.sonarWeakPointSlot && !a.destroyed)
+                : bossObj.appendages.find((a) => !a.destroyed);
+              nearestWorldPos = weakApp ? weakApp.worldPos : bossObj.group.position;
+            } else {
+              for (const e of enemies) {
+                if (e.active && e.group.position.z < -8 && e.group.position.z > bestZ) {
+                  bestZ = e.group.position.z;
+                  nearestWorldPos = e.group.position;
+                }
+              }
+            }
+            if (nearestWorldPos) {
+              _vec3A.copy(nearestWorldPos).project(camera);
+              if (_vec3A.z <= 1) {
+                const targetAimX = THREE.MathUtils.clamp(_vec3A.x, -0.82, 0.82);
+                const targetAimY = THREE.MathUtils.clamp(_vec3A.y, -0.75, 0.75);
+                sim.aimX = THREE.MathUtils.damp(sim.aimX, targetAimX, 3.8, dt);
+                sim.aimY = THREE.MathUtils.damp(sim.aimY, targetAimY, 3.8, dt);
+              }
+            } else {
+              sim.aimX = THREE.MathUtils.damp(
+                sim.aimX,
+                THREE.MathUtils.clamp(sim.playerX / 15 + moveX * 0.42, -0.85, 0.85),
+                7,
+                dt,
+              );
+              sim.aimY = THREE.MathUtils.damp(
+                sim.aimY,
+                THREE.MathUtils.clamp(sim.playerY / 9 + moveY * 0.42, -0.78, 0.78),
+                7,
+                dt,
+              );
+            }
+          } else {
+            sim.aimX = THREE.MathUtils.damp(
+              sim.aimX,
+              THREE.MathUtils.clamp(sim.playerX / 15 + moveX * 0.45, -0.9, 0.9),
+              8,
+              dt,
+            );
+            sim.aimY = THREE.MathUtils.damp(
+              sim.aimY,
+              THREE.MathUtils.clamp(sim.playerY / 9 + moveY * 0.45, -0.85, 0.85),
+              8,
+              dt,
+            );
+          }
         }
 
         const baseSpeed = sim.upgrades.includes('hydro_thruster_coil')
@@ -2912,8 +3117,8 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
           sim.pressureZoneLabel =
             sim.hullStress >= 65
-              ? 'CRITICAL ABYSSAL OVERPRESSURE — HULL BUCKLING! ASCEND (W / UP)'
-              : 'DEEP-PRESSURE DANGER ZONE — HULL STRESS RISING (ASCEND TO RELIEVE)';
+              ? 'CRITICAL OVERPRESSURE — STEER UP TO ASCEND'
+              : 'DEEP-PRESSURE ZONE — STEER UP TO RELIEVE STRESS';
 
           if (sim.hullStress >= 65 && sim.barrelRollTimer <= 0) {
             const overpressure = (sim.hullStress - 65) / 35;
@@ -2973,10 +3178,17 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           }
         }
 
-        // Primary Weapon Firing (Click, J, or Touch Hold-to-Fire)
+        // Primary Weapon Firing (Touch Hold-to-Fire, Auto-Fire when targets present, or manual trigger)
+        const hasLiveCombatTargets =
+          enemies.length > 0 || Boolean(bossObj && bossObj.active);
+        const autoFireActive =
+          playerSave.settings.autoFire &&
+          (hasLiveCombatTargets ||
+            (activeMission.objectiveType === 'flight_school' &&
+              sim.shotsFired < 4));
         if (sim.fireCooldown > 0) sim.fireCooldown -= dt;
         if (
-          (pointerFiring || touchFiring || heldKeys.has('KeyJ')) &&
+          (pointerFiring || touchFiring || autoFireActive || heldKeys.has('KeyJ')) &&
           sim.fireCooldown <= 0
         ) {
           firePrimaryCannons();
@@ -3165,7 +3377,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
         sim.sonarHazardsCount = scannedHazardCounter;
         sim.hazardWarningText = anyEnemyTelegraphing
-          ? 'INCOMING BIO-PLASMA TELEGRAPH — EVADE OR BARREL ROLL (SPACE)'
+          ? 'INCOMING BIO-PLASMA — TAP EVADE TO DODGE'
           : null;
 
         // Update Stage Leviathan Boss & Localized Appendages
@@ -3428,6 +3640,14 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           p.pos.addScaledVector(p.vel, dt);
           p.mesh.position.copy(p.pos);
 
+          if (p.isPlayer && p.isTorpedo) {
+            _vec3A.copy(p.pos).add(p.vel);
+            p.mesh.lookAt(_vec3A);
+            if (Math.random() < 0.35) {
+              spawnParticleBurst(p.pos, 0xff6b00, 1, 6);
+            }
+          }
+
           if (!p.isPlayer) {
             p.mesh.rotation.x += dt * 5;
             p.mesh.rotation.y += dt * 5;
@@ -3601,6 +3821,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                   spawnParticleBurst(app.worldPos, 0xf43f5e, 34, 24);
                   spawnParticleBurst(app.worldPos, app.baseColorHex, 28, 20);
                   soundEngine.playAppendageBreak();
+                  triggerHaptic([35, 25, 45]);
 
                   if (sim.sonarWeakPointSlot === app.slot) {
                     sim.sonarWeakPointSlot = pickBestBossSonarWeakPoint();
@@ -3871,6 +4092,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       domCanvas.removeEventListener('pointermove', handlePointerMove);
       domCanvas.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
       domCanvas.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('wheel', handleWheel);
       window.removeEventListener(
