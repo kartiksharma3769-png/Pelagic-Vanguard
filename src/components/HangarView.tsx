@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Crosshair,
   Eye,
   Flame,
@@ -110,7 +112,7 @@ function computeStatsForLoadout(
   }
   if (activeUpgrades.includes('hadal_pressure_Bulkhead')) {
     pressureRes = Math.min(
-      85,
+      92,
       Math.round(pressureRes + 30 * getTierMult('hadal_pressure_Bulkhead')),
     );
     hull += Math.round(18 * getTierMult('hadal_pressure_Bulkhead'));
@@ -188,10 +190,20 @@ export const HangarView: React.FC<HangarViewProps> = ({
     );
   };
 
-  const currentShipDef =
-    SHIP_CATALOG.find((s) => s.id === previewShipId) || SHIP_CATALOG[0];
+  const currentShipIndex = Math.max(
+    0,
+    SHIP_CATALOG.findIndex((s) => s.id === previewShipId),
+  );
+  const currentShipDef = SHIP_CATALOG[currentShipIndex] || SHIP_CATALOG[0];
+  const currentShipTier = currentShipDef.tier || currentShipIndex + 1;
   const maxModuleSlots = currentShipDef.moduleCapacity;
   const fleetPower = calculateFleetPower(save);
+
+  const stepPreviewShip = (delta: number) => {
+    const nextIdx =
+      (currentShipIndex + delta + SHIP_CATALOG.length) % SHIP_CATALOG.length;
+    setPreviewShipId(SHIP_CATALOG[nextIdx].id);
+  };
 
   const tacticalModules = useMemo(
     () =>
@@ -261,7 +273,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       unit: '',
       curr: currentStats.hull,
       next: candidateStats.hull,
-      max: 220,
+      max: 360,
       color: 'bg-emerald-400',
     },
     {
@@ -269,7 +281,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       unit: '',
       curr: currentStats.shield,
       next: candidateStats.shield,
-      max: 220,
+      max: 350,
       color: 'bg-cyan-400',
     },
     {
@@ -277,7 +289,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       unit: '',
       curr: currentStats.firepower,
       next: candidateStats.firepower,
-      max: 220,
+      max: 380,
       color: 'bg-amber-400',
     },
     {
@@ -285,7 +297,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       unit: '',
       curr: currentStats.speed,
       next: candidateStats.speed,
-      max: 32,
+      max: 36,
       color: 'bg-sky-400',
     },
     {
@@ -293,7 +305,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       unit: '',
       curr: currentStats.locks,
       next: candidateStats.locks,
-      max: 8,
+      max: 11,
       color: 'bg-fuchsia-400',
     },
     {
@@ -301,7 +313,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       unit: '%',
       curr: currentStats.pressureRes,
       next: candidateStats.pressureRes,
-      max: 90,
+      max: 95,
       color: 'bg-teal-400',
     },
   ];
@@ -333,6 +345,10 @@ export const HangarView: React.FC<HangarViewProps> = ({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="pointer-events-auto rounded-2xl bg-slate-950/80 backdrop-blur-md ring-1 ring-white/15 px-3.5 py-2.5 shadow-xl max-w-xs sm:max-w-sm">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
+              <span className="font-mono font-bold text-amber-300">
+                TIER {currentShipTier}/{SHIP_CATALOG.length}
+              </span>
+              <span aria-hidden="true">·</span>
               <span
                 className="font-semibold"
                 style={{ color: currentShipDef.accentColor }}
@@ -347,6 +363,9 @@ export const HangarView: React.FC<HangarViewProps> = ({
             <h1 className="font-display text-lg sm:text-xl font-bold text-white truncate">
               {currentShipDef.name}
             </h1>
+            <p className="text-[11px] text-slate-300 truncate">
+              {currentShipDef.subtitle}
+            </p>
             <div className="mt-2 flex items-center gap-2">
               {shipOwned ? (
                 <button
@@ -376,7 +395,12 @@ export const HangarView: React.FC<HangarViewProps> = ({
                   }`}
                 >
                   <Lock className="h-3.5 w-3.5" />
-                  <span>Unlock {currentShipDef.costCredits} CR</span>
+                  <span>
+                    Unlock {currentShipDef.costCredits} CR
+                    {currentShipDef.costMaterials > 0
+                      ? ` + ${currentShipDef.costMaterials} AL`
+                      : ''}
+                  </span>
                 </button>
               )}
             </div>
@@ -433,41 +457,74 @@ export const HangarView: React.FC<HangarViewProps> = ({
           </div>
         </div>
 
+        {/* Fullscreen 3D Bottom Prev/Next + 12-Tier Progression Bar + Paint Switcher */}
         <div className="pointer-events-auto flex flex-col sm:flex-row items-stretch sm:items-end justify-between gap-2">
-          <div className="flex-1 overflow-x-auto no-scrollbar rounded-2xl bg-slate-950/88 backdrop-blur-md ring-1 ring-white/15 p-2 flex gap-2">
-            {SHIP_CATALOG.map((ship) => {
-              const isPreview = previewShipId === ship.id;
-              const isEquipped = save.selectedShip === ship.id;
-              const isOwned = save.ownedShips.includes(ship.id);
-              return (
-                <button
-                  key={ship.id}
-                  onClick={() => setPreviewShipId(ship.id)}
-                  className={`min-h-[48px] min-w-[132px] flex-1 rounded-xl px-3 py-2 text-left transition cursor-pointer border shrink-0 ${
-                    isPreview
-                      ? 'bg-cyan-500/20 border-cyan-400 text-white'
-                      : 'bg-slate-900/70 border-white/10 text-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-1 text-xs font-bold">
-                    <span className="truncate">
-                      {ship.name.replace('Vanguard ', '')}
-                    </span>
-                    {isEquipped ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                    ) : !isOwned ? (
-                      <Lock className="h-3 w-3 text-amber-400 shrink-0" />
-                    ) : null}
-                  </div>
-                  <div
-                    className="text-[10px] font-medium truncate"
-                    style={{ color: ship.accentColor }}
+          <div className="flex-1 rounded-2xl bg-slate-950/88 backdrop-blur-md ring-1 ring-white/15 p-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                onClick={() => stepPreviewShip(-1)}
+                aria-label="Previous Ship"
+                className="min-h-[42px] px-3 rounded-xl bg-slate-900/90 border border-white/15 text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer flex items-center gap-1 text-xs font-bold shrink-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span>Prev</span>
+              </button>
+
+              <div className="min-w-0 text-center flex-1">
+                <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-white truncate">
+                  <span className="font-mono text-amber-300">
+                    T{currentShipTier}
+                  </span>
+                  <span className="truncate">{currentShipDef.name}</span>
+                  {shipEquipped ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  ) : !shipOwned ? (
+                    <Lock className="h-3 w-3 text-amber-400 shrink-0" />
+                  ) : null}
+                </div>
+                <div className="text-[10px] text-slate-400 truncate">
+                  {currentShipDef.baseHull} HP · {currentShipDef.baseShield} SP ·{' '}
+                  {currentShipDef.baseSpeed} m/s · {currentShipDef.baseTorpedoLocks} Locks ·{' '}
+                  {currentShipDef.moduleCapacity} Slots
+                </div>
+              </div>
+
+              <button
+                onClick={() => stepPreviewShip(1)}
+                aria-label="Next Ship"
+                className="min-h-[42px] px-3 rounded-xl bg-slate-900/90 border border-white/15 text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer flex items-center gap-1 text-xs font-bold shrink-0"
+              >
+                <span>Next</span>
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Interactive 12-Tier Progression Bar */}
+            <div className="grid grid-cols-12 gap-1 pt-0.5">
+              {SHIP_CATALOG.map((ship, idx) => {
+                const isCurr = ship.id === previewShipId;
+                const isOwn = save.ownedShips.includes(ship.id);
+                const isEq = save.selectedShip === ship.id;
+                return (
+                  <button
+                    key={ship.id}
+                    onClick={() => setPreviewShipId(ship.id)}
+                    title={`Tier ${idx + 1}: ${ship.name}`}
+                    className={`h-5 rounded-md font-mono text-[9px] font-bold transition cursor-pointer flex items-center justify-center border ${
+                      isCurr
+                        ? 'bg-cyan-400 text-slate-950 border-white shadow-[0_0_10px_rgba(34,211,238,0.6)] scale-105'
+                        : isEq
+                          ? 'bg-emerald-500/35 text-emerald-200 border-emerald-400/60'
+                          : isOwn
+                            ? 'bg-slate-800 text-cyan-200 border-cyan-500/30'
+                            : 'bg-slate-900/80 text-slate-500 border-white/10'
+                    }`}
                   >
-                    {ship.classLabel}
-                  </div>
-                </button>
-              );
-            })}
+                    {idx + 1}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="rounded-2xl bg-slate-950/88 backdrop-blur-md ring-1 ring-white/15 p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
@@ -514,7 +571,9 @@ export const HangarView: React.FC<HangarViewProps> = ({
 
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-[11px] text-cyan-400 font-medium">
-              <span>Hangar</span>
+              <span className="font-mono font-bold text-amber-300">
+                TIER {currentShipTier}/{SHIP_CATALOG.length}
+              </span>
               <span aria-hidden="true">·</span>
               <span className="font-mono text-emerald-300 tabular-nums">
                 {fleetPower} PWR
@@ -573,51 +632,56 @@ export const HangarView: React.FC<HangarViewProps> = ({
 
         {/* Slide-Up Mobile Sheet (Bottom on Portrait/Compact, Right Drawer on Wide Landscape) */}
         <div className="pointer-events-auto animate-panel-up w-full lg:w-[540px] lg:h-[calc(100%-12px)] lg:mr-4 lg:mb-3 max-h-[68dvh] lg:max-h-none flex flex-col rounded-t-3xl lg:rounded-3xl bg-slate-950/92 backdrop-blur-xl border-t lg:border border-white/15 shadow-[0_-18px_50px_rgba(0,0,0,0.85)] overflow-hidden">
-          {/* Drag Handle + Ship Switcher Strip */}
+          {/* Drag Handle + Prev/Next Ship Navigator + 12-Tier Progression Bar */}
           <div className="px-3 pt-2.5 pb-2 border-b border-white/10 space-y-2 shrink-0">
             <div className="mx-auto h-1 w-10 rounded-full bg-white/20 lg:hidden" />
 
-            <div className="flex items-center gap-2">
-              <div className="flex-1 flex gap-1.5 overflow-x-auto no-scrollbar snap-x">
-                {SHIP_CATALOG.map((ship) => {
-                  const isPreview = previewShipId === ship.id;
-                  const isEquipped = save.selectedShip === ship.id;
-                  const isOwned = save.ownedShips.includes(ship.id);
-                  return (
-                    <button
-                      key={ship.id}
-                      onClick={() => setPreviewShipId(ship.id)}
-                      className={`snap-start min-h-[44px] min-w-[116px] rounded-xl px-2.5 py-1.5 text-left transition cursor-pointer border shrink-0 flex items-center justify-between gap-2 ${
-                        isPreview
-                          ? 'bg-cyan-500/20 border-cyan-400 text-white'
-                          : 'bg-slate-900/75 border-white/10 text-slate-300'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold truncate">
-                          {ship.name.replace('Vanguard ', '')}
-                        </div>
-                        <div
-                          className="text-[10px] font-medium truncate"
-                          style={{ color: ship.accentColor }}
-                        >
-                          {ship.classLabel}
-                        </div>
-                      </div>
-                      {isEquipped ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-300 shrink-0" />
-                      ) : !isOwned ? (
-                        <Lock className="h-3 w-3 text-amber-300 shrink-0" />
-                      ) : null}
-                    </button>
-                  );
-                })}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => stepPreviewShip(-1)}
+                aria-label="Previous Ship"
+                className="min-h-[44px] min-w-[42px] px-2.5 rounded-xl bg-slate-900/90 border border-white/15 text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer flex items-center justify-center shrink-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="flex-1 min-w-0 rounded-xl bg-slate-900/75 border border-cyan-400/35 px-2.5 py-1.5 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-white truncate">
+                    <span className="font-mono text-amber-300 shrink-0">
+                      TIER {currentShipTier}/{SHIP_CATALOG.length}
+                    </span>
+                    <span aria-hidden="true" className="text-slate-500">
+                      ·
+                    </span>
+                    <span className="truncate">{currentShipDef.name}</span>
+                  </div>
+                  <div
+                    className="text-[10px] font-medium truncate"
+                    style={{ color: currentShipDef.accentColor }}
+                  >
+                    {currentShipDef.subtitle}
+                  </div>
+                </div>
+                {shipEquipped ? (
+                  <Check className="h-4 w-4 text-emerald-300 shrink-0" />
+                ) : !shipOwned ? (
+                  <Lock className="h-3.5 w-3.5 text-amber-300 shrink-0" />
+                ) : null}
               </div>
+
+              <button
+                onClick={() => stepPreviewShip(1)}
+                aria-label="Next Ship"
+                className="min-h-[44px] min-w-[42px] px-2.5 rounded-xl bg-slate-900/90 border border-white/15 text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer flex items-center justify-center shrink-0"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
 
               {shipOwned ? (
                 <button
                   onClick={() => onSelectShip(currentShipDef.id)}
-                  className={`min-h-[44px] shrink-0 rounded-xl px-3.5 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                  className={`min-h-[44px] shrink-0 rounded-xl px-3 text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                     shipEquipped
                       ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/40'
                       : 'bg-cyan-400 text-slate-950'
@@ -629,7 +693,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 <button
                   onClick={() => onUnlockShip(currentShipDef.id)}
                   disabled={!canAffordShip}
-                  className={`min-h-[44px] shrink-0 rounded-xl px-3 text-xs font-bold transition whitespace-nowrap ${
+                  className={`min-h-[44px] shrink-0 rounded-xl px-2.5 text-xs font-bold transition whitespace-nowrap ${
                     canAffordShip
                       ? 'bg-amber-400 text-slate-950 cursor-pointer'
                       : 'bg-slate-900 text-slate-500 ring-1 ring-white/10 cursor-not-allowed'
@@ -638,6 +702,33 @@ export const HangarView: React.FC<HangarViewProps> = ({
                   {currentShipDef.costCredits} CR
                 </button>
               )}
+            </div>
+
+            {/* 12-Tier Interactive Progression Strip */}
+            <div className="grid grid-cols-12 gap-1">
+              {SHIP_CATALOG.map((ship, idx) => {
+                const isPreview = previewShipId === ship.id;
+                const isEquipped = save.selectedShip === ship.id;
+                const isOwned = save.ownedShips.includes(ship.id);
+                return (
+                  <button
+                    key={ship.id}
+                    onClick={() => setPreviewShipId(ship.id)}
+                    title={`Tier ${idx + 1}: ${ship.name}`}
+                    className={`h-5 rounded-md font-mono text-[9px] font-bold transition cursor-pointer flex items-center justify-center border ${
+                      isPreview
+                        ? 'bg-cyan-400 text-slate-950 border-white shadow-[0_0_8px_rgba(34,211,238,0.55)]'
+                        : isEquipped
+                          ? 'bg-emerald-500/35 text-emerald-200 border-emerald-400/60'
+                          : isOwned
+                            ? 'bg-slate-800 text-cyan-200 border-cyan-500/30'
+                            : 'bg-slate-900/80 text-slate-500 border-white/10'
+                    }`}
+                  >
+                    {idx + 1}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Compact 6-Stat Mini Bar */}

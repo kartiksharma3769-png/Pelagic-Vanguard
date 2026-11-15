@@ -36,12 +36,21 @@ export type EnemyType =
 
 export type ShipClassId =
   | 'vanguard_interceptor'
+  | 'barracuda_skimmer'
   | 'leviathan_assault'
   | 'aegis_guardian'
-  | 'echo_tactical';
+  | 'echo_tactical'
+  | 'seawolf_hunter'
+  | 'kraken_siege'
+  | 'poseidon_carrier'
+  | 'charybdis_jugger'
+  | 'valkyrie_supersonic'
+  | 'titan_dreadnought'
+  | 'sovereign_leviathan';
 
 export interface ShipDefinition {
   id: ShipClassId;
+  tier?: number;
   name: string;
   classLabel: 'Interceptor' | 'Assault' | 'Guardian' | 'Tactical';
   subtitle: string;
@@ -53,7 +62,7 @@ export interface ShipDefinition {
   requiredStageCleared: number; // 0 = starter
   baseHull: number;
   baseShield: number;
-  baseSpeed: number; // 18..28
+  baseSpeed: number; // 18..32
   cannonDamageMult: number;
   fireRateMult: number;
   baseTorpedoLocks: number;

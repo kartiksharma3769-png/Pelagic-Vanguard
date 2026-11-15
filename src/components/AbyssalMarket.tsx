@@ -2,11 +2,14 @@ import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Crosshair,
   Database,
   Eye,
   Flame,
   Layers,
+  Lock,
   Palette,
   RefreshCw,
   RotateCcw,
@@ -76,7 +79,7 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
   onExchangeCreditsForCore,
   onClose,
 }) => {
-  const [category, setCategory] = useState<MarketCategory>('weapons');
+  const [category, setCategory] = useState<MarketCategory>('ships');
   const [isInspecting3D, setIsInspecting3D] = useState<boolean>(false);
   const [selectedShipId, setSelectedShipId] = useState<ShipClassId>(
     save.selectedShip,
@@ -128,8 +131,12 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
     SHIP_CATALOG.find((s) => s.id === save.selectedShip) || SHIP_CATALOG[0];
   const maxModuleSlots = activeShip.moduleCapacity;
 
-  const focusShip =
-    SHIP_CATALOG.find((s) => s.id === selectedShipId) || SHIP_CATALOG[0];
+  const focusShipIndex = Math.max(
+    0,
+    SHIP_CATALOG.findIndex((s) => s.id === selectedShipId),
+  );
+  const focusShip = SHIP_CATALOG[focusShipIndex] || SHIP_CATALOG[0];
+  const focusShipTier = focusShip.tier || focusShipIndex + 1;
   const focusWeapon =
     WEAPON_CATALOG.find((w) => w.id === selectedWeaponId) || WEAPON_CATALOG[0];
   const focusModule =
@@ -139,6 +146,14 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
     COSMETIC_CATALOG.find((c) => c.id === selectedCosmeticId) ||
     COSMETIC_CATALOG[0];
 
+  const stepSelectedShip = (delta: number) => {
+    const nextIdx =
+      (focusShipIndex + delta + SHIP_CATALOG.length) % SHIP_CATALOG.length;
+    const nextShip = SHIP_CATALOG[nextIdx];
+    setSelectedShipId(nextShip.id);
+    onPreviewShip(nextShip.id, selectedCosmeticId);
+  };
+
   /* =======================================================================
    * FULLSCREEN 3D SHOWROOM INSPECTION VIEWPORT
    * ===================================================================== */
@@ -147,14 +162,18 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
       <div className="relative h-full w-full flex flex-col justify-between p-3 sm:p-5 pt-safe pb-safe px-safe pointer-events-none select-none overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="pointer-events-auto rounded-2xl bg-slate-950/80 backdrop-blur-md ring-1 ring-white/15 px-3.5 py-2.5 shadow-xl max-w-xs sm:max-w-sm">
-            <div className="text-[11px] font-medium text-amber-400">
-              3D Showroom
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-amber-400">
+              <span className="font-mono font-bold">
+                TIER {focusShipTier}/{SHIP_CATALOG.length}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>3D Showroom</span>
             </div>
             <h1 className="font-display text-lg sm:text-xl font-bold text-white truncate">
               {focusShip.name} · {focusCosmetic.name}
             </h1>
-            <p className="mt-0.5 text-[11px] text-slate-300">
-              Swipe 360° or pinch to zoom before unlocking.
+            <p className="mt-0.5 text-[11px] text-slate-300 truncate">
+              {focusShip.subtitle}
             </p>
           </div>
 
@@ -204,34 +223,75 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
         </div>
 
         <div className="pointer-events-auto flex flex-col sm:flex-row items-stretch sm:items-end justify-between gap-2">
-          <div className="flex-1 overflow-x-auto no-scrollbar rounded-2xl bg-slate-950/88 backdrop-blur-md ring-1 ring-white/15 p-2 flex gap-2">
-            {SHIP_CATALOG.map((ship) => {
-              const isSelected = selectedShipId === ship.id;
-              return (
-                <button
-                  key={ship.id}
-                  onClick={() => {
-                    setSelectedShipId(ship.id);
-                    onPreviewShip(ship.id, selectedCosmeticId);
-                  }}
-                  className={`min-h-[48px] min-w-[132px] flex-1 rounded-xl px-3 py-2 text-left transition cursor-pointer border shrink-0 ${
-                    isSelected
-                      ? 'bg-amber-500/20 border-amber-400 text-white'
-                      : 'bg-slate-900/70 border-white/10 text-slate-300'
-                  }`}
-                >
-                  <div className="text-xs font-bold truncate">
-                    {ship.name.replace('Vanguard ', '')}
-                  </div>
-                  <div
-                    className="text-[10px] font-medium truncate"
-                    style={{ color: ship.accentColor }}
+          <div className="flex-1 rounded-2xl bg-slate-950/88 backdrop-blur-md ring-1 ring-white/15 p-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                onClick={() => stepSelectedShip(-1)}
+                aria-label="Previous Ship"
+                className="min-h-[42px] px-3 rounded-xl bg-slate-900/90 border border-white/15 text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer flex items-center gap-1 text-xs font-bold shrink-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span>Prev</span>
+              </button>
+
+              <div className="min-w-0 text-center flex-1">
+                <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-white truncate">
+                  <span className="font-mono text-amber-300">
+                    T{focusShipTier}
+                  </span>
+                  <span className="truncate">{focusShip.name}</span>
+                  {save.selectedShip === focusShip.id ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  ) : !save.ownedShips.includes(focusShip.id) ? (
+                    <Lock className="h-3 w-3 text-amber-400 shrink-0" />
+                  ) : null}
+                </div>
+                <div className="text-[10px] text-slate-400 truncate">
+                  {focusShip.baseHull} HP · {focusShip.baseShield} SP ·{' '}
+                  {focusShip.baseSpeed} m/s · {focusShip.baseTorpedoLocks} Locks ·{' '}
+                  {focusShip.moduleCapacity} Slots
+                </div>
+              </div>
+
+              <button
+                onClick={() => stepSelectedShip(1)}
+                aria-label="Next Ship"
+                className="min-h-[42px] px-3 rounded-xl bg-slate-900/90 border border-white/15 text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer flex items-center gap-1 text-xs font-bold shrink-0"
+              >
+                <span>Next</span>
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Interactive 12-Tier Progression Bar */}
+            <div className="grid grid-cols-12 gap-1 pt-0.5">
+              {SHIP_CATALOG.map((ship, idx) => {
+                const isCurr = ship.id === selectedShipId;
+                const isOwn = save.ownedShips.includes(ship.id);
+                const isEq = save.selectedShip === ship.id;
+                return (
+                  <button
+                    key={ship.id}
+                    onClick={() => {
+                      setSelectedShipId(ship.id);
+                      onPreviewShip(ship.id, selectedCosmeticId);
+                    }}
+                    title={`Tier ${idx + 1}: ${ship.name}`}
+                    className={`h-5 rounded-md font-mono text-[9px] font-bold transition cursor-pointer flex items-center justify-center border ${
+                      isCurr
+                        ? 'bg-amber-400 text-slate-950 border-white shadow-[0_0_10px_rgba(251,191,36,0.6)] scale-105'
+                        : isEq
+                          ? 'bg-emerald-500/35 text-emerald-200 border-emerald-400/60'
+                          : isOwn
+                            ? 'bg-slate-800 text-cyan-200 border-cyan-500/30'
+                            : 'bg-slate-900/80 text-slate-500 border-white/10'
+                    }`}
                   >
-                    {ship.classLabel}
-                  </div>
-                </button>
-              );
-            })}
+                    {idx + 1}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="rounded-2xl bg-slate-950/88 backdrop-blur-md ring-1 ring-white/15 p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
@@ -331,7 +391,7 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
             <div className="flex gap-1.5 overflow-x-auto no-scrollbar rounded-2xl bg-slate-900/90 p-1 ring-1 ring-white/10">
               {(
                 [
-                  { id: 'ships', label: 'Ships', icon: Shield },
+                  { id: 'ships', label: 'Ships (12)', icon: Shield },
                   { id: 'weapons', label: 'Weapons', icon: Crosshair },
                   { id: 'modules', label: 'Modules', icon: Layers },
                   { id: 'cosmetics', label: 'Paint', icon: Palette },
@@ -361,50 +421,123 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
           {/* Scrollable Catalog Grid */}
           <div className="flex-1 overflow-y-auto px-3 py-2.5 space-y-2">
             {category === 'ships' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {SHIP_CATALOG.map((ship) => {
-                  const owned = save.ownedShips.includes(ship.id);
-                  const active = save.selectedShip === ship.id;
-                  const isFocused = focusShip.id === ship.id;
-                  return (
+              <div className="space-y-2.5">
+                {/* Prev/Next + 12-Tier Progression Bar at Top of Ships Tab */}
+                <div className="rounded-2xl bg-slate-900/85 border border-white/10 p-2.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
                     <button
-                      key={ship.id}
-                      onClick={() => {
-                        setSelectedShipId(ship.id);
-                        onPreviewShip(ship.id, save.equippedCosmetic);
-                      }}
-                      className={`min-h-[60px] rounded-2xl p-3 text-left flex items-center justify-between gap-2 transition cursor-pointer border ${
-                        isFocused
-                          ? 'border-amber-400 bg-amber-500/15 text-white'
-                          : 'border-white/10 bg-slate-900/65 text-slate-300'
-                      }`}
+                      onClick={() => stepSelectedShip(-1)}
+                      aria-label="Previous Ship"
+                      className="min-h-[40px] px-2.5 rounded-xl bg-slate-950/90 border border-white/15 text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer flex items-center gap-1 text-xs font-bold shrink-0"
                     >
-                      <div className="min-w-0">
-                        <div className="text-xs sm:text-sm font-bold text-white truncate">
-                          {ship.name}
-                        </div>
-                        <div
-                          className="text-[11px] font-medium truncate"
-                          style={{ color: ship.accentColor }}
-                        >
-                          {ship.classLabel} · {ship.baseHull} HP /{' '}
-                          {ship.baseShield} SP
-                        </div>
-                      </div>
-                      <div className="shrink-0 font-mono text-[11px] font-bold tabular-nums">
-                        {active ? (
-                          <span className="text-emerald-300">ON</span>
-                        ) : owned ? (
-                          <span className="text-cyan-300">OWNED</span>
-                        ) : (
-                          <span className="text-amber-300">
-                            {ship.costCredits} CR
-                          </span>
-                        )}
-                      </div>
+                      <ChevronLeft className="h-4 w-4" />
+                      <span>Prev</span>
                     </button>
-                  );
-                })}
+
+                    <div className="min-w-0 text-center flex-1">
+                      <div className="text-xs font-bold text-white truncate">
+                        <span className="font-mono text-amber-300 mr-1.5">
+                          TIER {focusShipTier}/{SHIP_CATALOG.length}
+                        </span>
+                        {focusShip.name}
+                      </div>
+                      <div
+                        className="text-[10px] font-medium truncate"
+                        style={{ color: focusShip.accentColor }}
+                      >
+                        {focusShip.subtitle}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => stepSelectedShip(1)}
+                      aria-label="Next Ship"
+                      className="min-h-[40px] px-2.5 rounded-xl bg-slate-950/90 border border-white/15 text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer flex items-center gap-1 text-xs font-bold shrink-0"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-12 gap-1">
+                    {SHIP_CATALOG.map((ship, idx) => {
+                      const isCurr = ship.id === selectedShipId;
+                      const isOwn = save.ownedShips.includes(ship.id);
+                      const isEq = save.selectedShip === ship.id;
+                      return (
+                        <button
+                          key={ship.id}
+                          onClick={() => {
+                            setSelectedShipId(ship.id);
+                            onPreviewShip(ship.id, save.equippedCosmetic);
+                          }}
+                          title={`Tier ${idx + 1}: ${ship.name}`}
+                          className={`h-5 rounded-md font-mono text-[9px] font-bold transition cursor-pointer flex items-center justify-center border ${
+                            isCurr
+                              ? 'bg-amber-400 text-slate-950 border-white shadow-[0_0_8px_rgba(251,191,36,0.55)]'
+                              : isEq
+                                ? 'bg-emerald-500/35 text-emerald-200 border-emerald-400/60'
+                                : isOwn
+                                  ? 'bg-slate-800 text-cyan-200 border-cyan-500/30'
+                                  : 'bg-slate-950 text-slate-500 border-white/10'
+                          }`}
+                        >
+                          {idx + 1}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {SHIP_CATALOG.map((ship, idx) => {
+                    const owned = save.ownedShips.includes(ship.id);
+                    const active = save.selectedShip === ship.id;
+                    const isFocused = focusShip.id === ship.id;
+                    const tierNum = ship.tier || idx + 1;
+                    return (
+                      <button
+                        key={ship.id}
+                        onClick={() => {
+                          setSelectedShipId(ship.id);
+                          onPreviewShip(ship.id, save.equippedCosmetic);
+                        }}
+                        className={`min-h-[60px] rounded-2xl p-3 text-left flex items-center justify-between gap-2 transition cursor-pointer border ${
+                          isFocused
+                            ? 'border-amber-400 bg-amber-500/15 text-white'
+                            : 'border-white/10 bg-slate-900/65 text-slate-300'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-white truncate">
+                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-white/10 shrink-0">
+                              T{tierNum}
+                            </span>
+                            <span className="truncate">{ship.name}</span>
+                          </div>
+                          <div
+                            className="text-[11px] font-medium truncate mt-0.5"
+                            style={{ color: ship.accentColor }}
+                          >
+                            {ship.classLabel} · {ship.baseHull} HP /{' '}
+                            {ship.baseShield} SP · {ship.baseTorpedoLocks} Locks
+                          </div>
+                        </div>
+                        <div className="shrink-0 font-mono text-[11px] font-bold tabular-nums">
+                          {active ? (
+                            <span className="text-emerald-300">ON</span>
+                          ) : owned ? (
+                            <span className="text-cyan-300">OWNED</span>
+                          ) : (
+                            <span className="text-amber-300">
+                              {ship.costCredits} CR
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
