@@ -541,7 +541,49 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           spawned++;
         }
       }
-      if ( burstInstanced.instanceColor) {
+      if (burstInstanced.instanceColor) {
+        burstInstanced.instanceColor.needsUpdate = true;
+      }
+    }
+
+    // Spawns high-velocity incandescent orange/amber/gold jet embers streaming out of the stern nozzles
+    const emberPalette = [0xff6b00, 0xffaa00, 0xfffbeb, 0xff4500];
+    function spawnExhaustEmberJet(count: number = 6, speedScale: number = 26) {
+      vanguard.group.updateMatrixWorld();
+      let spawned = 0;
+      for (let i = 0; i < PARTICLE_POOL_SIZE && spawned < count; i++) {
+        const p = particles[i];
+        if (!p.active) {
+          p.active = true;
+          // Alternate between port and starboard stern nozzles in ship-local space
+          const sideX = (spawned % 2 === 0 ? -0.58 : 0.58) + (Math.random() - 0.5) * 0.35;
+          const localNozzleY = (Math.random() - 0.5) * 0.22;
+          _vec3A.set(sideX, localNozzleY, 2.05).applyMatrix4(vanguard.group.matrixWorld);
+          p.pos.copy(_vec3A);
+
+          // Exhaust direction is +Z in ship local space with turbulent cone spread
+          _vec3B
+            .set(
+              (Math.random() - 0.5) * 0.34,
+              (Math.random() - 0.5) * 0.34,
+              1.0,
+            )
+            .normalize()
+            .transformDirection(vanguard.group.matrixWorld);
+
+          const spd = (0.65 + Math.random() * 0.75) * speedScale;
+          p.vel.copy(_vec3B).multiplyScalar(spd);
+          p.life = 0;
+          p.maxLife = 0.24 + Math.random() * 0.28;
+          p.scale = 0.55 + Math.random() * 0.95;
+          const hex = emberPalette[spawned % emberPalette.length];
+          p.colorHex = hex;
+          _color.setHex(hex);
+          burstInstanced.setColorAt(i, _color);
+          spawned++;
+        }
+      }
+      if (burstInstanced.instanceColor) {
         burstInstanced.instanceColor.needsUpdate = true;
       }
     }
@@ -2232,13 +2274,10 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         hangarUserYaw = -0.38;
         hangarUserPitch = 0.08;
       } else if (action === 'testThrusters') {
-        thrusterSurgeTimer = 1.4;
-        const shieldMat = vanguard.shieldSphere
-          .material as THREE.MeshBasicMaterial;
-        shieldMat.opacity = 0.5;
-        spawnParticleBurst(vanguard.group.position, 0x22d3ee, 28, 18);
-        soundEngine.playBarrelRoll();
-        triggerHaptic([15, 25, 20]);
+        thrusterSurgeTimer = 2.75;
+        spawnExhaustEmberJet(28, 32);
+        soundEngine.playThrusterIgnite();
+        triggerHaptic([25, 30, 45, 25, 35]);
       } else if (action === 'centerInspect') {
         hangarCenteredInspect = true;
       } else if (action === 'splitInspect') {
@@ -2565,11 +2604,27 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       }
       if (thrusterSurgeTimer > 0) {
         thrusterSurgeTimer = Math.max(0, thrusterSurgeTimer - dt);
+        // Continuously eject turbulent incandescent embers out of the stern nozzles during Ignite
+        if (thrusterSurgeTimer > 0.35 && Math.random() < 0.85) {
+          spawnExhaustEmberJet(3, 28);
+        }
       }
 
-      // Animate all 4 ship chassis, 3-layer plasma afterburners, AWACS dish, recoil & muzzle flashes
+      // Compute 3-stage realistic afterburner ignition envelope:
+      // Stage 1 (0.0-0.3s): Spool-up flash | Stage 2 (0.3-2.15s): Full afterburner roar | Stage 3 (2.15-2.75s): Taper down
+      let igniteBoost = 1.0;
+      if (thrusterSurgeTimer > 0) {
+        const elapsedIgnite = 2.75 - thrusterSurgeTimer;
+        if (elapsedIgnite < 0.3) {
+          igniteBoost = 1.0 + (elapsedIgnite / 0.3) * 1.65;
+        } else if (thrusterSurgeTimer > 0.6) {
+          igniteBoost = 2.6 + Math.sin(elapsed * 42) * 0.12;
+        } else {
+          igniteBoost = 1.0 + (thrusterSurgeTimer / 0.6) * 1.6;
+        }
+      }
       const surgeBoost =
-        thrusterSurgeTimer > 0 || sim.barrelRollTimer > 0 ? 2.4 : 1.0;
+        sim.barrelRollTimer > 0 ? 2.4 : igniteBoost;
       vanguard.updateShipEffects(elapsed, dt, surgeBoost);
 
       const shieldMat = vanguard.shieldSphere
@@ -2765,22 +2820,33 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           targetLookZ = 0;
         }
 
-        vanguard.group.position.x = THREE.MathUtils.damp(
-          vanguard.group.position.x,
-          targetShipX,
-          6.0,
-          dt,
-        );
-        vanguard.group.position.y = THREE.MathUtils.damp(
-          vanguard.group.position.y,
-          targetShipY,
-          6.0,
-          dt,
-        );
+        // Apply realistic forward thrust lurch & high-frequency engine vibration during Ignite
+        const igniteIntensity = Math.max(0, (surgeBoost - 1.0) / 1.6);
+        const forwardLurchX = -Math.sin(targetShipYaw) * 0.34 * igniteIntensity;
+        const forwardLurchZ = -Math.cos(targetShipYaw) * 0.34 * igniteIntensity;
+        const engineVibX =
+          Math.sin(elapsed * 78) * 0.016 * igniteIntensity;
+        const engineVibY =
+          Math.cos(elapsed * 92) * 0.016 * igniteIntensity;
+
+        vanguard.group.position.x =
+          THREE.MathUtils.damp(
+            vanguard.group.position.x,
+            targetShipX + forwardLurchX,
+            7.5,
+            dt,
+          ) + engineVibX;
+        vanguard.group.position.y =
+          THREE.MathUtils.damp(
+            vanguard.group.position.y,
+            targetShipY,
+            6.0,
+            dt,
+          ) + engineVibY;
         vanguard.group.position.z = THREE.MathUtils.damp(
           vanguard.group.position.z,
-          0,
-          6.0,
+          forwardLurchZ,
+          7.5,
           dt,
         );
 
@@ -2794,7 +2860,10 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
         vanguard.group.rotation.x = THREE.MathUtils.damp(
           vanguard.group.rotation.x,
-          idlePitch + hangarUserPitch * 0.45 - sim.aimY * 0.06,
+          idlePitch +
+            hangarUserPitch * 0.45 -
+            sim.aimY * 0.06 -
+            igniteIntensity * 0.045,
           6.0,
           dt,
         );
@@ -2813,25 +2882,33 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
         dockPlatformGroup.position.x = vanguard.group.position.x;
         dockPlatformGroup.position.z = vanguard.group.position.z;
-        shipPointLight.intensity = thrusterSurgeTimer > 0 ? 5.2 : 3.2;
+        shipPointLight.intensity = 3.2 + igniteIntensity * 2.8;
         shipPointLight.position.set(
           vanguard.group.position.x + 1.2,
           vanguard.group.position.y + 1.8,
           vanguard.group.position.z + 3.2,
         );
 
-        camera.position.x = THREE.MathUtils.damp(
-          camera.position.x,
-          targetCamX,
-          4.8,
-          dt,
-        );
-        camera.position.y = THREE.MathUtils.damp(
-          camera.position.y,
-          targetCamY,
-          4.8,
-          dt,
-        );
+        // High-frequency jet-blast camera shake during full afterburner ignition
+        const camShakeX =
+          Math.sin(elapsed * 67) * 0.042 * igniteIntensity;
+        const camShakeY =
+          Math.cos(elapsed * 83) * 0.038 * igniteIntensity;
+
+        camera.position.x =
+          THREE.MathUtils.damp(
+            camera.position.x,
+            targetCamX,
+            4.8,
+            dt,
+          ) + camShakeX;
+        camera.position.y =
+          THREE.MathUtils.damp(
+            camera.position.y,
+            targetCamY,
+            4.8,
+            dt,
+          ) + camShakeY;
         camera.position.z = THREE.MathUtils.damp(
           camera.position.z,
           targetCamZ,

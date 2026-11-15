@@ -183,6 +183,82 @@ class AbyssalAudioEngine {
     osc.stop(now + 0.36);
   }
 
+  public playThrusterIgnite(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+
+    // 1. Turbine spool-up whine (220Hz -> 1320Hz -> 680Hz)
+    const turbineOsc = ctx.createOscillator();
+    const turbineGain = ctx.createGain();
+    turbineOsc.type = 'sawtooth';
+    turbineOsc.frequency.setValueAtTime(220, now);
+    turbineOsc.frequency.exponentialRampToValueAtTime(1320, now + 0.45);
+    turbineOsc.frequency.exponentialRampToValueAtTime(980, now + 1.9);
+    turbineOsc.frequency.exponentialRampToValueAtTime(310, now + 2.65);
+
+    const turbineFilter = ctx.createBiquadFilter();
+    turbineFilter.type = 'bandpass';
+    turbineFilter.frequency.setValueAtTime(900, now);
+    turbineFilter.Q.setValueAtTime(3.5, now);
+
+    turbineGain.gain.setValueAtTime(0.001, now);
+    turbineGain.gain.linearRampToValueAtTime(0.055, now + 0.28);
+    turbineGain.gain.setValueAtTime(0.04, now + 1.8);
+    turbineGain.gain.exponentialRampToValueAtTime(0.0008, now + 2.7);
+
+    turbineOsc.connect(turbineFilter);
+    turbineFilter.connect(turbineGain);
+    turbineGain.connect(ctx.destination);
+    turbineOsc.start(now);
+    turbineOsc.stop(now + 2.72);
+
+    // 2. Deep sub-bass combustion thump & rumble
+    const subOsc = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    subOsc.type = 'triangle';
+    subOsc.frequency.setValueAtTime(115, now);
+    subOsc.frequency.exponentialRampToValueAtTime(54, now + 0.18);
+    subOsc.frequency.linearRampToValueAtTime(68, now + 1.6);
+    subOsc.frequency.exponentialRampToValueAtTime(36, now + 2.65);
+
+    subGain.gain.setValueAtTime(0.24, now);
+    subGain.gain.setValueAtTime(0.18, now + 1.75);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 2.68);
+
+    subOsc.connect(subGain);
+    subGain.connect(ctx.destination);
+    subOsc.start(now);
+    subOsc.stop(now + 2.7);
+
+    // 3. Turbulent jet afterburner roar (filtered white noise)
+    if (this.noiseBuffer) {
+      const noise = ctx.createBufferSource();
+      noise.buffer = this.noiseBuffer;
+      noise.loop = true;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(380, now);
+      filter.frequency.exponentialRampToValueAtTime(1850, now + 0.25);
+      filter.frequency.setValueAtTime(1450, now + 1.85);
+      filter.frequency.exponentialRampToValueAtTime(260, now + 2.68);
+
+      const nGain = ctx.createGain();
+      nGain.gain.setValueAtTime(0.01, now);
+      nGain.gain.linearRampToValueAtTime(0.24, now + 0.14);
+      nGain.gain.setValueAtTime(0.2, now + 1.85);
+      nGain.gain.exponentialRampToValueAtTime(0.001, now + 2.7);
+
+      noise.connect(filter);
+      filter.connect(nGain);
+      nGain.connect(ctx.destination);
+      noise.start(now);
+      noise.stop(now + 2.72);
+    }
+  }
+
   public playImpact(heavy: boolean = false): void {
     const ctx = this.ensureContext();
     if (!ctx) return;
