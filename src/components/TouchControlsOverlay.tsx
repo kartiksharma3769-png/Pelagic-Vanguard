@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Camera,
   Crosshair,
+  Flame,
   Radar,
   RotateCw,
   Sparkles,
@@ -20,6 +21,7 @@ interface TouchControlsOverlayProps {
   onTriggerBarrelRoll: () => void;
   onTriggerTorpedoSalvo: () => void;
   onTriggerTacticalSonar: () => void;
+  onTriggerShipAbility: () => void;
 }
 
 export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
@@ -33,6 +35,7 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
   onTriggerBarrelRoll,
   onTriggerTorpedoSalvo,
   onTriggerTacticalSonar,
+  onTriggerShipAbility,
 }) => {
   const stickBaseRef = useRef<HTMLDivElement | null>(null);
   const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({
@@ -146,6 +149,10 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
     hud.torpedoCooldown > 0
       ? Math.max(0, Math.min(100, (1 - hud.torpedoCooldown) * 100))
       : 100;
+  const abilityReadyPct =
+    hud.activeAbilityCooldown > 0
+      ? Math.max(0, Math.min(100, (1 - hud.activeAbilityCooldown) * 100))
+      : 100;
 
   const joystickCluster = (
     <div className="pointer-events-auto flex flex-col items-start gap-2">
@@ -194,9 +201,9 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
   );
 
   const actionCluster = (
-    <div className="pointer-events-auto flex items-end gap-2.5 sm:gap-3.5">
-      {/* Secondary Ability Column: Sonar, Evade, Torpedo Salvo */}
-      <div className="flex flex-col gap-2">
+    <div className="pointer-events-auto flex items-end gap-2 sm:gap-3">
+      {/* Secondary Ability 2x2 Grid: Sonar, Evade, Torpedo Salvo, Active Ship Ability */}
+      <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
         <button
           type="button"
           onPointerDown={(e) => {
@@ -204,7 +211,7 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
             pulseHaptic(14);
             onTriggerTacticalSonar();
           }}
-          className={`relative overflow-hidden flex min-h-[44px] min-w-[96px] sm:min-w-[108px] cursor-pointer touch-none items-center justify-center gap-1.5 rounded-2xl border px-3 font-mono-tabular text-xs font-semibold shadow-lg transition-transform active:scale-95 ${
+          className={`relative overflow-hidden flex min-h-[44px] min-w-[78px] sm:min-w-[96px] cursor-pointer touch-none items-center justify-center gap-1 rounded-2xl border px-2 font-mono-tabular text-[11px] font-semibold shadow-lg transition-transform active:scale-95 ${
             hud.sonarActive
               ? 'border-emerald-300 bg-emerald-500/30 text-emerald-100'
               : hud.sonarCooldown > 0
@@ -235,7 +242,7 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
             pulseHaptic(16);
             onTriggerBarrelRoll();
           }}
-          className={`flex min-h-[44px] min-w-[96px] sm:min-w-[108px] cursor-pointer touch-none items-center justify-center gap-1.5 rounded-2xl border px-3 font-mono-tabular text-xs font-semibold shadow-lg transition-transform active:scale-95 ${
+          className={`flex min-h-[44px] min-w-[78px] sm:min-w-[96px] cursor-pointer touch-none items-center justify-center gap-1 rounded-2xl border px-2 font-mono-tabular text-[11px] font-semibold shadow-lg transition-transform active:scale-95 ${
             hud.barrelRolling
               ? 'border-white bg-cyan-400/30 text-white'
               : 'border-cyan-400/50 bg-slate-950/80 text-cyan-200'
@@ -252,7 +259,7 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
             pulseHaptic(18);
             onTriggerTorpedoSalvo();
           }}
-          className={`relative overflow-hidden flex min-h-[44px] min-w-[96px] sm:min-w-[108px] cursor-pointer touch-none items-center justify-center gap-1.5 rounded-2xl border px-3 font-mono-tabular text-xs font-semibold shadow-lg transition-transform active:scale-95 ${
+          className={`relative overflow-hidden flex min-h-[44px] min-w-[78px] sm:min-w-[96px] cursor-pointer touch-none items-center justify-center gap-1 rounded-2xl border px-2 font-mono-tabular text-[11px] font-semibold shadow-lg transition-transform active:scale-95 ${
             hud.torpedoCooldown > 0
               ? 'border-white/10 bg-slate-950/80 text-slate-400'
               : hud.lockedCount > 0
@@ -271,6 +278,38 @@ export const TouchControlsOverlay: React.FC<TouchControlsOverlayProps> = ({
             {hud.torpedoCooldown > 0
               ? `${Math.ceil(hud.torpedoCooldown * 3.8)}s`
               : `Torp ${hud.lockedCount}/${hud.maxLocks}`}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          aria-label={`Activate ${hud.activeAbilityName}`}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            pulseHaptic(20);
+            onTriggerShipAbility();
+          }}
+          className={`relative overflow-hidden flex min-h-[44px] min-w-[78px] sm:min-w-[96px] max-w-[116px] cursor-pointer touch-none items-center justify-center gap-1 rounded-2xl border px-2 font-mono-tabular text-[11px] font-semibold shadow-lg transition-transform active:scale-95 ${
+            hud.activeAbilityActive
+              ? 'border-fuchsia-300 bg-fuchsia-500/35 text-white shadow-[0_0_18px_rgba(217,70,239,0.45)]'
+              : hud.activeAbilityCooldown > 0
+                ? 'border-white/10 bg-slate-950/80 text-slate-400'
+                : 'border-fuchsia-400/60 bg-slate-950/85 text-fuchsia-200 shadow-[0_0_14px_rgba(217,70,239,0.25)]'
+          }`}
+        >
+          {hud.activeAbilityCooldown > 0 && !hud.activeAbilityActive && (
+            <span
+              className="pointer-events-none absolute inset-y-0 left-0 bg-fuchsia-400/20"
+              style={{ width: `${abilityReadyPct}%` }}
+            />
+          )}
+          <Flame className="relative h-3.5 w-3.5 shrink-0" />
+          <span className="relative truncate">
+            {hud.activeAbilityActive
+              ? `${hud.activeAbilityRemainingSeconds.toFixed(1)}s`
+              : hud.activeAbilityCooldown > 0
+                ? `${hud.activeAbilityCooldownSeconds}s`
+                : 'Ability'}
           </span>
         </button>
       </div>

@@ -1019,7 +1019,7 @@ export const PilotProfileModal: React.FC<PilotProfileModalProps> = ({
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {SHIP_CATALOG.map((ship) => {
+            {SHIP_CATALOG.map((ship, idx) => {
               const owned = save.ownedShips.includes(ship.id);
               const active = save.selectedShip === ship.id;
               return (
@@ -1034,13 +1034,16 @@ export const PilotProfileModal: React.FC<PilotProfileModalProps> = ({
                   }`}
                 >
                   <div
-                    className="text-[10px] font-bold uppercase"
+                    className="text-[10px] font-bold uppercase truncate"
                     style={{ color: ship.accentColor }}
                   >
-                    {ship.classLabel}
+                    T{ship.tier || idx + 1} · {ship.rarity}
                   </div>
                   <div className="mt-0.5 text-xs font-bold text-white truncate">
-                    {ship.name.replace('Vanguard ', '')}
+                    {ship.name}
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate">
+                    {ship.roleTitle}
                   </div>
                   <div className="mt-1.5 font-mono text-[10px]">
                     {active ? (

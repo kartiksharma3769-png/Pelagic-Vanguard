@@ -2,6 +2,7 @@ import {
   AchievementDefinition,
   GameSettings,
   PlayerSaveData,
+  ShipDefinition,
   StageId,
   UpgradeId,
 } from './types';
@@ -141,15 +142,44 @@ export function createDefaultSaveData(): PlayerSaveData {
   };
 }
 
+const LEGACY_SHIP_ID_MIGRATION: Record<string, PlayerSaveData['selectedShip']> = {
+  barracuda_skimmer: 'leviathan_assault',
+  seawolf_hunter: 'abyssal_talon',
+  kraken_siege: 'tempest_corsair',
+  poseidon_carrier: 'trench_warden',
+  charybdis_jugger: 'leviathan_breaker',
+  valkyrie_supersonic: 'rift_manta',
+  titan_dreadnought: 'abyssal_sovereign',
+  sovereign_leviathan: 'pelagic_ascendant',
+};
+
+function migrateShipId(rawId: unknown): PlayerSaveData['selectedShip'] {
+  if (typeof rawId !== 'string') return 'vanguard_interceptor';
+  if (rawId in LEGACY_SHIP_ID_MIGRATION) {
+    return LEGACY_SHIP_ID_MIGRATION[rawId];
+  }
+  const valid = SHIP_CATALOG.some((s) => s.id === rawId);
+  return valid ? (rawId as PlayerSaveData['selectedShip']) : 'vanguard_interceptor';
+}
+
 function normalizeAndMigrateSave(raw: Partial<PlayerSaveData>): PlayerSaveData {
   const base = createDefaultSaveData();
   const today = getTodayDateKey();
   const isSameDay = raw.dailyDateKey === today;
 
+  const migratedOwned = Array.isArray(raw.ownedShips)
+    ? Array.from(new Set(raw.ownedShips.map((id) => migrateShipId(id))))
+    : base.ownedShips;
+  const migratedSelected = raw.selectedShip
+    ? migrateShipId(raw.selectedShip)
+    : base.selectedShip;
+
   const merged: PlayerSaveData = {
     ...base,
     ...raw,
-    schemaVersion: 1,
+    schemaVersion: 2,
+    selectedShip: migratedSelected,
+    ownedShips: migratedOwned,
     upgradeTiers: {
       ...base.upgradeTiers,
       ...(raw.upgradeTiers || {}),
@@ -177,6 +207,16 @@ function normalizeAndMigrateSave(raw: Partial<PlayerSaveData>): PlayerSaveData {
   }
   if (!merged.ownedShips.includes(merged.selectedShip)) {
     merged.selectedShip = 'vanguard_interceptor';
+  }
+  const activeShipDef =
+    SHIP_CATALOG.find((s) => s.id === merged.selectedShip) || SHIP_CATALOG[0];
+  if (Array.isArray(merged.activeUpgrades)) {
+    merged.activeUpgrades = Array.from(new Set(merged.activeUpgrades)).slice(
+      0,
+      activeShipDef.moduleCapacity,
+    );
+  } else {
+    merged.activeUpgrades = [];
   }
   return merged;
 }
@@ -333,6 +373,16 @@ export function isMissionUnlocked(
   return Boolean(prereqRecord && prereqRecord.cleared);
 }
 
+export function isShipMissionUnlocked(
+  ship: ShipDefinition,
+  save: PlayerSaveData,
+): boolean {
+  if (save.ownedShips.includes(ship.id)) return true;
+  if (!ship.unlockMissionId) return true;
+  const record = save.missionRecords[ship.unlockMissionId];
+  return Boolean(record && record.cleared);
+}
+
 export function getHighestClearedStage(save: PlayerSaveData): number {
   let highest = 0;
   if (save.missionRecords['s1_m3_aurelia_finale']?.cleared) highest = 1;
@@ -354,13 +404,13 @@ export function getRecommendedNextMissionId(save: PlayerSaveData): string {
 export function calculateFleetPower(save: PlayerSaveData): number {
   const ship =
     SHIP_CATALOG.find((s) => s.id === save.selectedShip) || SHIP_CATALOG[0];
-  let power = ship.baseHull * 0.5 + ship.baseShield * 0.5;
+  let power = ship.fleetPowerIndex || 100;
   save.activeUpgrades.forEach((uId) => {
     const tier = Math.max(1, save.upgradeTiers[uId] || 1);
-    power += 35 * tier;
+    power += 8 * tier;
   });
-  if (save.equippedPrimaryWeapon !== 'cavitation_cannons') power += 40;
-  if (save.equippedSecondaryWeapon !== 'sonic_torpedoes') power += 45;
+  if (save.equippedPrimaryWeapon !== 'cavitation_cannons') power += 10;
+  if (save.equippedSecondaryWeapon !== 'sonic_torpedoes') power += 12;
   return Math.round(power);
 }
 

@@ -3,6 +3,7 @@ import {
   Camera,
   Compass,
   Crosshair,
+  Flame,
   Gauge,
   Pause,
   Play,
@@ -102,6 +103,7 @@ interface HudOverlayProps {
   onTriggerBarrelRoll: () => void;
   onTriggerTorpedoSalvo: () => void;
   onTriggerTacticalSonar: () => void;
+  onTriggerShipAbility: () => void;
   onFocusAppendage: (slot: AppendageSlot) => void;
   onSummonBossNow: () => void;
 }
@@ -153,6 +155,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
   onTriggerBarrelRoll,
   onTriggerTorpedoSalvo,
   onTriggerTacticalSonar,
+  onTriggerShipAbility,
   onFocusAppendage,
 }) => {
   const [activeModal, setActiveModal] = useState<HubModalType>('none');
@@ -458,6 +461,30 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 {!save.settings.touchControlsEnabled && (
                   <>
                     <button
+                      onClick={onTriggerShipAbility}
+                      aria-label={`Activate ${hud.activeAbilityName}`}
+                      className={`pointer-events-auto min-h-[44px] flex items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold transition cursor-pointer tabular-nums ${
+                        hud.activeAbilityActive
+                          ? 'bg-fuchsia-500/35 text-white ring-1 ring-fuchsia-300'
+                          : hud.activeAbilityCooldown > 0
+                            ? 'bg-slate-900/80 text-slate-400 ring-1 ring-white/10'
+                            : 'bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/55 hover:bg-fuchsia-500/30'
+                      }`}
+                    >
+                      <Flame className="h-3.5 w-3.5 shrink-0" />
+                      <span className="hidden sm:inline max-w-[130px] truncate">
+                        [R] {hud.activeAbilityName}
+                      </span>
+                      {(hud.activeAbilityActive ||
+                        hud.activeAbilityCooldown > 0) && (
+                        <span>
+                          {hud.activeAbilityActive
+                            ? `${hud.activeAbilityRemainingSeconds.toFixed(1)}s`
+                            : `${hud.activeAbilityCooldownSeconds}s`}
+                        </span>
+                      )}
+                    </button>
+                    <button
                       onClick={handleToggleAutoFire}
                       aria-label="Toggle Auto-Fire"
                       className={`pointer-events-auto min-h-[44px] flex items-center gap-1 rounded-xl px-2.5 text-xs font-bold transition cursor-pointer ${
@@ -574,8 +601,14 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     </strong>
                   </span>
                 </div>
-                <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                <div className="text-[10px] text-slate-400 truncate mt-0.5 tabular-nums">
                   {equippedPrimary.name} · {equippedSecondary.name}
+                  {hud.activeDronesCount > 0 && (
+                    <span className="text-emerald-300 font-semibold">
+                      {' '}
+                      · {hud.activeDronesCount} Drones
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -690,6 +723,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
         onTriggerBarrelRoll={onTriggerBarrelRoll}
         onTriggerTorpedoSalvo={onTriggerTorpedoSalvo}
         onTriggerTacticalSonar={onTriggerTacticalSonar}
+        onTriggerShipAbility={onTriggerShipAbility}
       />
 
       {/* =====================================================================
@@ -776,7 +810,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 <h1 className="font-display text-xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-[0_4px_18px_rgba(0,0,0,0.9)]">
                   Pelagic Vanguard
                 </h1>
-                <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-slate-300">
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px] sm:text-xs text-slate-300">
                   <span
                     className="font-semibold"
                     style={{ color: activeShip.accentColor }}
@@ -784,7 +818,11 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                     {activeShip.name}
                   </span>
                   <span aria-hidden="true">·</span>
-                  <span>{activeShip.classLabel}</span>
+                  <span>{activeShip.roleTitle}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-amber-300 font-medium">
+                    {activeShip.rarity}
+                  </span>
                   <span aria-hidden="true">·</span>
                   <span className="font-mono text-emerald-300 tabular-nums">
                     {fleetPower} PWR

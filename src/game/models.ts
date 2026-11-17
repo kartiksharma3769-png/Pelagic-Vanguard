@@ -5,9 +5,36 @@ import {
   PrimaryWeaponId,
   SecondaryWeaponId,
   ShipClassId,
+  ShipWeaponVfxConfig,
   StageId,
   UpgradeId,
 } from './types';
+import { SHIP_CATALOG } from './stages';
+import {
+  ShipChassisBuild,
+  ShipMaterialPalette,
+  ThrusterFlameAssembly,
+  applyPropulsionConfigToThrusters,
+  createRealisticThrusterAssembly,
+} from './ships/shipTypes';
+import {
+  createBathysBastionIVChassis,
+  createMaelstromXIIChassis,
+  createNautilusSpectreVIIChassis,
+  createVanguardIXChassis,
+} from './ships/tier1to4';
+import {
+  createAbyssalTalonChassis,
+  createLeviathanBreakerChassis,
+  createRiftMantaChassis,
+  createTempestCorsairChassis,
+} from './ships/tier5to8';
+import {
+  createAbyssalSovereignChassis,
+  createKrakenReaperChassis,
+  createPelagicAscendantChassis,
+  createTrenchWardenChassis,
+} from './ships/tier9to12';
 
 export interface BiolumeDamageUniforms {
   uTime: { value: number };
@@ -493,507 +520,150 @@ export interface ShipLoadoutVisualConfig {
   pilotLevel?: number;
 }
 
-interface EmberStreakNode {
-  mesh: THREE.Mesh;
-  seed: number;
-  radialAngle: number;
-  radialDist: number;
-  speed: number;
+interface ShipHardpointLayout {
+  primaryMounts: Array<{ pos: [number, number, number]; scale: number }>;
+  secondaryMounts: Array<{ pos: [number, number, number]; scale: number }>;
 }
 
-interface ThrusterFlameAssembly {
-  root: THREE.Group;
-  nozzlePetalRing: THREE.Group;
-  petalMeshes: THREE.Mesh[];
-  flameHolderMesh: THREE.Mesh;
-  exhaustDiscMesh: THREE.Mesh;
-  innerCore: THREE.Mesh;
-  midFlame: THREE.Mesh;
-  outerPlume: THREE.Mesh;
-  crossPlanes: THREE.Mesh[];
-  shockRings: THREE.Mesh[];
-  emberStreaks: EmberStreakNode[];
-  coreShaderUniforms: {
-    uTime: { value: number };
-    uThrottle: { value: number };
-    uPhase: { value: number };
-  };
-  plumeShaderUniforms: {
-    uTime: { value: number };
-    uThrottle: { value: number };
-    uPhase: { value: number };
-  };
-  baseScale: number;
-}
+const SHIP_HARDPOINT_LAYOUTS: Record<ShipClassId, ShipHardpointLayout> = {
+  vanguard_interceptor: {
+    primaryMounts: [
+      { pos: [-0.82, -0.06, -1.15], scale: 0.92 },
+      { pos: [0.82, -0.06, -1.15], scale: 0.92 },
+    ],
+    secondaryMounts: [
+      { pos: [-1.18, -0.22, 0.15], scale: 0.92 },
+      { pos: [1.18, -0.22, 0.15], scale: 0.92 },
+    ],
+  },
+  leviathan_assault: {
+    primaryMounts: [
+      { pos: [-1.18, -0.04, -0.88], scale: 0.86 },
+      { pos: [1.18, -0.04, -0.88], scale: 0.86 },
+      { pos: [-2.28, -0.08, -0.18], scale: 0.82 },
+      { pos: [2.28, -0.08, -0.18], scale: 0.82 },
+    ],
+    secondaryMounts: [
+      { pos: [-1.62, -0.18, 0.2], scale: 0.96 },
+      { pos: [1.62, -0.18, 0.2], scale: 0.96 },
+    ],
+  },
+  echo_tactical: {
+    primaryMounts: [
+      { pos: [-0.96, -0.08, -1.08], scale: 0.82 },
+      { pos: [0.96, -0.08, -1.08], scale: 0.82 },
+    ],
+    secondaryMounts: [
+      { pos: [-0.72, -0.24, 0.05], scale: 0.85 },
+      { pos: [0.72, -0.24, 0.05], scale: 0.85 },
+    ],
+  },
+  aegis_guardian: {
+    primaryMounts: [
+      { pos: [-1.78, 0.14, -0.62], scale: 1.26 },
+      { pos: [1.78, 0.14, -0.62], scale: 1.26 },
+    ],
+    secondaryMounts: [
+      { pos: [-2.38, -0.12, 0.15], scale: 1.15 },
+      { pos: [2.38, -0.12, 0.15], scale: 1.15 },
+    ],
+  },
+  abyssal_talon: {
+    primaryMounts: [
+      { pos: [-1.82, -0.05, -0.52], scale: 0.98 },
+      { pos: [1.82, -0.05, -0.52], scale: 0.98 },
+    ],
+    secondaryMounts: [
+      { pos: [-0.74, -0.16, -0.72], scale: 0.92 },
+      { pos: [0.74, -0.16, -0.72], scale: 0.92 },
+    ],
+  },
+  tempest_corsair: {
+    primaryMounts: [
+      { pos: [-1.36, 0.02, -1.02], scale: 1.02 },
+      { pos: [1.36, 0.02, -1.02], scale: 1.02 },
+    ],
+    secondaryMounts: [
+      { pos: [-1.15, -0.25, 0.1], scale: 1.0 },
+      { pos: [1.15, -0.25, 0.1], scale: 1.0 },
+    ],
+  },
+  rift_manta: {
+    primaryMounts: [
+      { pos: [-2.98, 0.02, 0.08], scale: 0.95 },
+      { pos: [2.98, 0.02, 0.08], scale: 0.95 },
+    ],
+    secondaryMounts: [
+      { pos: [-1.76, -0.18, 0.18], scale: 0.95 },
+      { pos: [1.76, -0.18, 0.18], scale: 0.95 },
+    ],
+  },
+  leviathan_breaker: {
+    primaryMounts: [
+      { pos: [0, 0.3, -1.25], scale: 1.32 },
+      { pos: [-1.58, 0.02, -0.72], scale: 1.02 },
+      { pos: [1.58, 0.02, -0.72], scale: 1.02 },
+    ],
+    secondaryMounts: [
+      { pos: [-1.95, -0.2, 0.05], scale: 1.16 },
+      { pos: [1.95, -0.2, 0.05], scale: 1.16 },
+    ],
+  },
+  trench_warden: {
+    primaryMounts: [
+      { pos: [-2.12, 0.2, -0.32], scale: 0.95 },
+      { pos: [2.12, 0.2, -0.32], scale: 0.95 },
+      { pos: [-1.08, 0.24, -0.78], scale: 0.88 },
+      { pos: [1.08, 0.24, -0.78], scale: 0.88 },
+    ],
+    secondaryMounts: [
+      { pos: [-1.55, -0.22, 0.2], scale: 1.05 },
+      { pos: [1.55, -0.22, 0.2], scale: 1.05 },
+    ],
+  },
+  kraken_reaper: {
+    primaryMounts: [
+      { pos: [-2.18, 0.38, -0.82], scale: 0.92 },
+      { pos: [2.18, 0.38, -0.82], scale: 0.92 },
+      { pos: [-2.28, -0.32, -0.68], scale: 0.92 },
+      { pos: [2.28, -0.32, -0.68], scale: 0.92 },
+    ],
+    secondaryMounts: [
+      { pos: [-1.35, -0.24, 0.15], scale: 1.06 },
+      { pos: [1.35, -0.24, 0.15], scale: 1.06 },
+    ],
+  },
+  abyssal_sovereign: {
+    primaryMounts: [
+      { pos: [-1.12, 0.32, -1.12], scale: 1.08 },
+      { pos: [1.12, 0.32, -1.12], scale: 1.08 },
+      { pos: [-2.15, 0.12, -0.24], scale: 0.98 },
+      { pos: [2.15, 0.12, -0.24], scale: 0.98 },
+    ],
+    secondaryMounts: [
+      { pos: [-1.58, -0.22, 0.22], scale: 1.18 },
+      { pos: [1.58, -0.22, 0.22], scale: 1.18 },
+    ],
+  },
+  pelagic_ascendant: {
+    primaryMounts: [
+      { pos: [-0.74, 0.16, -1.38], scale: 1.16 },
+      { pos: [0.74, 0.16, -1.38], scale: 1.16 },
+      { pos: [-2.35, 0.18, -0.28], scale: 0.92 },
+      { pos: [2.35, 0.18, -0.28], scale: 0.92 },
+    ],
+    secondaryMounts: [
+      { pos: [-1.52, -0.22, 0.16], scale: 1.15 },
+      { pos: [1.52, -0.22, 0.16], scale: 1.15 },
+    ],
+  },
+};
 
 /**
- * Creates a custom GLSL Volumetric Orange-Blue Jet Afterburner ShaderMaterial.
- * Renders ionized cobalt-blue nozzle throat, blinding white-gold Mach shock diamonds,
- * and roaring turbulent orange-amber afterburner flame tongues with soft Fresnel edges.
- */
-function createJetAfterburnerShaderMaterial(
-  isInnerCore: boolean,
-  phaseOffset: number,
-): {
-  material: THREE.ShaderMaterial;
-  uniforms: {
-    uTime: { value: number };
-    uThrottle: { value: number };
-    uPhase: { value: number };
-  };
-} {
-  const uniforms = {
-    uTime: { value: 0 },
-    uThrottle: { value: 1.0 },
-    uPhase: { value: phaseOffset },
-  };
-
-  const material = new THREE.ShaderMaterial({
-    uniforms,
-    vertexShader: `
-      uniform float uTime;
-      uniform float uThrottle;
-      uniform float uPhase;
-      varying vec2 vUv;
-      varying vec3 vViewNormal;
-      varying vec3 vViewDir;
-
-      void main() {
-        vUv = uv;
-        // CylinderGeometry UV.y goes from 1.0 (nozzle base after translation) to 0.0 (plume tip)
-        float flow = clamp(1.0 - uv.y, 0.0, 1.0);
-        vec3 pos = position;
-
-        // Supersonic Mach shock-cell radial expansion/contraction waves along the jet
-        float speed = 22.0 + uThrottle * 14.0;
-        float machWave = sin(flow * 18.8495 - uTime * 8.0 + uPhase) * 0.08 * (1.0 - flow * 0.65);
-
-        // High-frequency turbulent whip & flutter toward the flame tail
-        float turbX = sin(flow * 14.0 - uTime * speed + uPhase * 2.1) * 0.14 * pow(flow, 1.45) * uThrottle;
-        float turbY = cos(flow * 16.5 - uTime * (speed * 1.12) + uPhase * 3.7) * 0.14 * pow(flow, 1.45) * uThrottle;
-
-        pos.xy *= (1.0 + machWave);
-        pos.x += turbX * 0.22;
-        pos.y += turbY * 0.22;
-
-        vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-        vViewNormal = normalize(normalMatrix * normal);
-        vViewDir = normalize(-mvPosition.xyz);
-        gl_Position = projectionMatrix * mvPosition;
-      }
-    `,
-    fragmentShader: `
-      uniform float uTime;
-      uniform float uThrottle;
-      uniform float uPhase;
-      varying vec2 vUv;
-      varying vec3 vViewNormal;
-      varying vec3 vViewDir;
-
-      // Multi-octave procedural jet combustion turbulence
-      float jetNoise(vec2 p) {
-        float n1 = sin(p.x * 6.28318 + sin(p.y * 5.0));
-        float n2 = cos(p.y * 8.5 - cos(p.x * 12.566 + p.y * 3.2));
-        float n3 = sin(p.x * 18.8495 - p.y * 14.2);
-        return (n1 * 0.45 + n2 * 0.35 + n3 * 0.2) * 0.5 + 0.5;
-      }
-
-      void main() {
-        float flow = clamp(1.0 - vUv.y, 0.0, 1.0);
-        float streamSpeed = 18.0 + uThrottle * 12.0;
-
-        vec2 noiseUv1 = vec2(vUv.x * 3.0, flow * 4.5 - uTime * streamSpeed * 0.18 + uPhase);
-        vec2 noiseUv2 = vec2(vUv.x * 6.0 - 0.4, flow * 9.0 - uTime * streamSpeed * 0.31 - uPhase);
-        float turb = jetNoise(noiseUv1) * 0.62 + jetNoise(noiseUv2) * 0.38;
-
-        // Dynamic ragged flame tip cutoff (zero hard geometric cone edges)
-        float tipCutoff = 0.72 + turb * 0.28;
-        float tailMask = 1.0 - smoothstep(tipCutoff - 0.32, tipCutoff, flow);
-        float nozzleEntryMask = smoothstep(0.0, 0.06, flow);
-
-        // Supersonic standing Mach shock diamonds inside the exhaust stream
-        float diamondWave = max(0.0, sin(flow * 18.84955 - 0.35));
-        float machDiamond = pow(diamondWave, ${isInnerCore ? '3.2' : '5.0'}) * exp(-flow * 1.65) * (0.65 + 0.45 * uThrottle);
-
-        // View-angle Fresnel softening so the cylinder edges feather smoothly
-        float ndotv = abs(dot(normalize(vViewNormal), normalize(vViewDir)));
-        float edgeSoft = pow(clamp(ndotv, 0.0, 1.0), ${isInnerCore ? '0.65' : '1.15'});
-
-        // Realistic hydrocarbon/plasma jet afterburner color gradient:
-        // 1. Ionized cobalt-blue at nozzle lip
-        // 2. Blinding white-yellow core & Mach shock diamonds
-        // 3. Incandescent golden-amber mid-plume
-        // 4. Turbulent fiery orange-red outer sheath & tail tongues
-        vec3 colBlueBase = vec3(0.22, 0.58, 1.0);
-        vec3 colWhiteCore = vec3(1.0, 0.99, 0.92);
-        vec3 colGoldMid = vec3(1.0, 0.78, 0.22);
-        vec3 colOrangeFire = vec3(1.0, 0.38, 0.03);
-        vec3 colCrimsonTip = vec3(0.88, 0.16, 0.01);
-
-        vec3 flameCol = mix(colBlueBase, colGoldMid, smoothstep(0.04, 0.28, flow));
-        flameCol = mix(flameCol, colOrangeFire, smoothstep(0.22, 0.62, flow));
-        flameCol = mix(flameCol, colCrimsonTip, smoothstep(0.58, 0.95, flow));
-
-        // Boost white-hot core and Mach shock diamonds
-        float coreIntensity = (${isInnerCore ? '0.82' : '0.35'}) * (1.0 - flow * 0.55) + machDiamond * 1.15;
-        flameCol = mix(flameCol, colWhiteCore, clamp(coreIntensity, 0.0, 1.0));
-
-        // High-speed bright orange-gold ember streaks embedded in the turbulent boundary
-        float emberStriations = smoothstep(0.74, 0.95, turb) * smoothstep(0.12, 0.85, flow);
-        flameCol += vec3(1.0, 0.55, 0.1) * emberStriations * (0.5 + 0.4 * uThrottle);
-
-        float brightness = (${isInnerCore ? '1.45' : '1.15'}) + (uThrottle - 1.0) * 0.55;
-        float alpha = nozzleEntryMask * tailMask * (0.35 + 0.65 * turb) * (0.28 + 0.72 * edgeSoft);
-        alpha *= clamp(${isInnerCore ? '0.95' : '0.82'} * (0.78 + 0.22 * uThrottle), 0.0, 0.98);
-
-        if (alpha <= 0.01) discard;
-        gl_FragColor = vec4(flameCol * brightness, alpha);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending,
-  });
-
-  return { material, uniforms };
-}
-
-/**
- * Builds a realistic mechanical Variable-Geometry Exhaust Nozzle ("Turkey-Feather" Petals + Hydraulic Actuators)
- * paired with a custom GLSL Volumetric Orange-Blue Jet Afterburner, Mach Shock Diamonds,
- * Cross-Plane Volumetric Core, and Streaming Turbulent Embers.
- */
-function createRealisticThrusterAssembly(
-  _coreMat: THREE.Material,
-  _fireMidMat: THREE.Material,
-  _outerTrimMat: THREE.Material,
-  nozzleMetalMat: THREE.Material,
-  actuatorSteelMat: THREE.Material,
-  scale = 1.0,
-): ThrusterFlameAssembly {
-  const root = new THREE.Group();
-  const phaseOffset = Math.random() * 6.28;
-
-  // 1. Armored nozzle mount collar & cooling shroud ring
-  const shroudCollar = new THREE.Mesh(
-    new THREE.CylinderGeometry(
-      0.28 * scale,
-      0.3 * scale,
-      0.26 * scale,
-      18,
-    ).rotateX(Math.PI / 2),
-    actuatorSteelMat,
-  );
-  shroudCollar.position.set(0, 0, -0.26 * scale);
-  root.add(shroudCollar);
-
-  // 2. Articulated 12-petal heat-stained variable-geometry exhaust nozzle
-  const nozzlePetalRing = new THREE.Group();
-  nozzlePetalRing.position.set(0, 0, -0.08 * scale);
-  root.add(nozzlePetalRing);
-
-  const petalMeshes: THREE.Mesh[] = [];
-  const petalCount = 12;
-  for (let i = 0; i < petalCount; i++) {
-    const angle = (i / petalCount) * Math.PI * 2;
-    const petalPivot = new THREE.Group();
-    petalPivot.rotation.z = angle;
-
-    // Tapered overlapping turkey-feather nozzle petal
-    const petalGeo = new THREE.BoxGeometry(
-      0.11 * scale,
-      0.026 * scale,
-      0.34 * scale,
-    );
-    const petal = new THREE.Mesh(petalGeo, nozzleMetalMat);
-    petal.position.set(0, 0.235 * scale, 0.04 * scale);
-    petal.rotation.x = 0.16; // Converged at idle; pivots open during Ignite!
-    petalPivot.add(petal);
-    petalMeshes.push(petal);
-
-    // External hydraulic actuator rod on every petal
-    const rodGeo = new THREE.CylinderGeometry(
-      0.014 * scale,
-      0.018 * scale,
-      0.28 * scale,
-      6,
-    ).rotateX(Math.PI / 2);
-    const rod = new THREE.Mesh(rodGeo, actuatorSteelMat);
-    rod.position.set(0, 0.275 * scale, -0.05 * scale);
-    rod.rotation.x = 0.12;
-    petalPivot.add(rod);
-
-    nozzlePetalRing.add(petalPivot);
-  }
-
-  // 3. Internal turbine flame-holder ring & radial stator struts (glows hot cherry-orange on Ignite)
-  const flameHolderMat = new THREE.MeshStandardMaterial({
-    color: 0x3b2314,
-    emissive: 0xff5500,
-    emissiveIntensity: 0.75,
-    metalness: 0.8,
-    roughness: 0.35,
-  });
-  const flameHolderMesh = new THREE.Mesh(
-    new THREE.TorusGeometry(0.15 * scale, 0.022 * scale, 8, 18),
-    flameHolderMat,
-  );
-  flameHolderMesh.position.set(0, 0, -0.04 * scale);
-  root.add(flameHolderMesh);
-
-  // Radial turbine stator vanes inside throat
-  for (let s = 0; s < 3; s++) {
-    const vane = new THREE.Mesh(
-      new THREE.BoxGeometry(0.32 * scale, 0.018 * scale, 0.04 * scale),
-      flameHolderMat,
-    );
-    vane.rotation.z = (s / 3) * Math.PI;
-    vane.position.set(0, 0, -0.05 * scale);
-    root.add(vane);
-  }
-
-  // Nozzle exhaust interior combustion glow disc
-  const exhaustDiscMat = new THREE.MeshBasicMaterial({
-    color: 0xfff3c4,
-    transparent: true,
-    opacity: 0.92,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const exhaustDiscMesh = new THREE.Mesh(
-    new THREE.CircleGeometry(0.195 * scale, 18),
-    exhaustDiscMat,
-  );
-  exhaustDiscMesh.position.set(0, 0, 0.01 * scale);
-  root.add(exhaustDiscMesh);
-
-  // 4. Custom GLSL Volumetric Jet Afterburner Plumes (Inner Mach Core + Mid Turbulent Fire + Outer Sheath)
-  const coreShader = createJetAfterburnerShaderMaterial(true, phaseOffset);
-  const plumeShader = createJetAfterburnerShaderMaterial(
-    false,
-    phaseOffset + 1.57,
-  );
-
-  // Layer 1: Supersonic White-Blue-Gold Inner Core Cylinder/Cone (open-ended for zero hard caps)
-  const innerGeo = new THREE.CylinderGeometry(
-    0.04 * scale,
-    0.155 * scale,
-    1.55 * scale,
-    20,
-    20,
-    true,
-  );
-  innerGeo.rotateX(Math.PI / 2);
-  innerGeo.translate(0, 0, 0.78 * scale);
-  const innerCore = new THREE.Mesh(innerGeo, coreShader.material);
-  innerCore.renderOrder = 6;
-  root.add(innerCore);
-
-  // Layer 2: Turbulent Orange-Amber Main Afterburner Plume
-  const midGeo = new THREE.CylinderGeometry(
-    0.065 * scale,
-    0.22 * scale,
-    2.05 * scale,
-    24,
-    24,
-    true,
-  );
-  midGeo.rotateX(Math.PI / 2);
-  midGeo.translate(0, 0, 1.02 * scale);
-  const midFlame = new THREE.Mesh(midGeo, plumeShader.material);
-  midFlame.renderOrder = 5;
-  root.add(midFlame);
-
-  // Layer 3: Outer Ionized Blue-Orange Turbulent Corona Sheath
-  const outerGeo = new THREE.CylinderGeometry(
-    0.09 * scale,
-    0.26 * scale,
-    2.35 * scale,
-    24,
-    20,
-    true,
-  );
-  outerGeo.rotateX(Math.PI / 2);
-  outerGeo.translate(0, 0, 1.16 * scale);
-  const outerPlume = new THREE.Mesh(outerGeo, plumeShader.material);
-  outerPlume.renderOrder = 4;
-  root.add(outerPlume);
-
-  // Layer 4: Two Intersecting Longitudinal Cross-Planes inside the plume for dense 360° volumetric core
-  const crossPlanes: THREE.Mesh[] = [];
-  [0, Math.PI / 2].forEach((rotAngle) => {
-    const planeGeo = new THREE.PlaneGeometry(
-      0.36 * scale,
-      1.95 * scale,
-      4,
-      18,
-    );
-    planeGeo.rotateX(Math.PI / 2);
-    planeGeo.rotateZ(rotAngle);
-    planeGeo.translate(0, 0, 0.96 * scale);
-    const cPlane = new THREE.Mesh(planeGeo, coreShader.material);
-    cPlane.renderOrder = 6;
-    root.add(cPlane);
-    crossPlanes.push(cPlane);
-  });
-
-  // 5. Standing Supersonic Mach Shock-Diamond Discs along the exhaust jet
-  const shockRingMat = new THREE.MeshBasicMaterial({
-    color: 0xfffbeb,
-    transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-  const shockRings: THREE.Mesh[] = [];
-  for (let i = 0; i < 4; i++) {
-    const r = (0.14 - i * 0.026) * scale;
-    const diamondGeo = new THREE.CylinderGeometry(
-      r * 0.35,
-      r,
-      0.16 * scale,
-      14,
-      1,
-      true,
-    );
-    diamondGeo.rotateX(Math.PI / 2);
-    const ring = new THREE.Mesh(diamondGeo, shockRingMat);
-    ring.position.set(0, 0, (0.24 + i * 0.34) * scale);
-    ring.renderOrder = 7;
-    root.add(ring);
-    shockRings.push(ring);
-  }
-
-  // 6. High-Velocity Turbulent Ember & Spark Streaks streaming out of the nozzle
-  const emberMat = new THREE.MeshBasicMaterial({
-    color: 0xffaa22,
-    transparent: true,
-    opacity: 0.92,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const emberGeo = new THREE.CapsuleGeometry(
-    0.012 * scale,
-    0.16 * scale,
-    3,
-    6,
-  );
-  emberGeo.rotateX(Math.PI / 2);
-
-  const emberStreaks: EmberStreakNode[] = [];
-  for (let e = 0; e < 10; e++) {
-    const emberMesh = new THREE.Mesh(emberGeo, emberMat);
-    emberMesh.renderOrder = 8;
-    root.add(emberMesh);
-    emberStreaks.push({
-      mesh: emberMesh,
-      seed: e * 0.137 + (phaseOffset % 1),
-      radialAngle: (e / 10) * Math.PI * 2 + e * 0.7,
-      radialDist: (0.04 + (e % 4) * 0.045) * scale,
-      speed: 2.2 + (e % 3) * 0.65,
-    });
-  }
-
-  return {
-    root,
-    nozzlePetalRing,
-    petalMeshes,
-    flameHolderMesh,
-    exhaustDiscMesh,
-    innerCore,
-    midFlame,
-    outerPlume,
-    crossPlanes,
-    shockRings,
-    emberStreaks,
-    coreShaderUniforms: coreShader.uniforms,
-    plumeShaderUniforms: plumeShader.uniforms,
-    baseScale: scale,
-  };
-}
-
-/**
- * Helper to build a realistic naval hydro-fighter cockpit interior:
- * Includes dark cockpit tub, armored ejection seat with headrest, side consoles,
- * pilot control yoke, and dual MFD instrument glare-shield.
- */
-function createCockpitInterior(
-  darkMetalMat: THREE.Material,
-  seatMat: THREE.Material,
-  avionicsMat: THREE.Material,
-): THREE.Group {
-  const interior = new THREE.Group();
-
-  // Cockpit floor tub & rear armored bulkhead
-  const tub = new THREE.Mesh(
-    new THREE.BoxGeometry(0.54, 0.14, 1.25),
-    darkMetalMat,
-  );
-  tub.position.set(0, -0.08, 0);
-  const bulkhead = new THREE.Mesh(
-    new THREE.BoxGeometry(0.52, 0.42, 0.08),
-    darkMetalMat,
-  );
-  bulkhead.position.set(0, 0.12, 0.56);
-  bulkhead.rotation.x = -0.18;
-  interior.add(tub, bulkhead);
-
-  // Ejection seat cushion, backrest, and twin head-pad rails
-  const seatBase = new THREE.Mesh(
-    new THREE.BoxGeometry(0.32, 0.08, 0.34),
-    seatMat,
-  );
-  seatBase.position.set(0, -0.01, 0.22);
-  const seatBack = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3, 0.38, 0.07),
-    seatMat,
-  );
-  seatBack.position.set(0, 0.16, 0.4);
-  seatBack.rotation.x = -0.18;
-  const headrest = new THREE.Mesh(
-    new THREE.BoxGeometry(0.22, 0.12, 0.09),
-    darkMetalMat,
-  );
-  headrest.position.set(0, 0.36, 0.44);
-  interior.add(seatBase, seatBack, headrest);
-
-  // Forward instrument glare-shield + twin recessed MFD screens + angled HUD combiner glass
-  const dash = new THREE.Mesh(
-    new THREE.BoxGeometry(0.48, 0.22, 0.38),
-    darkMetalMat,
-  );
-  dash.position.set(0, 0.08, -0.42);
-  const mfdLeft = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.14, 0.11),
-    avionicsMat,
-  );
-  mfdLeft.position.set(-0.11, 0.12, -0.225);
-  const mfdRight = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.14, 0.11),
-    avionicsMat,
-  );
-  mfdRight.position.set(0.11, 0.12, -0.225);
-  interior.add(dash, mfdLeft, mfdRight);
-
-  // Center control stick / hydro-yoke
-  const stick = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.016, 0.02, 0.22, 8),
-    darkMetalMat,
-  );
-  stick.position.set(0, 0.04, -0.08);
-  stick.rotation.x = 0.15;
-  interior.add(stick);
-
-  return interior;
-}
-
-/**
- * Builds all 4 distinct, photorealistic Naval Combat Submarine & Hydro-Fighter Chassis,
- * 3 Realistic Mechanical Primary Weapon Rigs, 3 Naval Torpedo/Missile Racks,
- * 8 Mechanical Instrument Modules, Bolted Reactive Armor Tier Evolution,
- * and Heat-Stained Variable-Geometry Exhausts.
+ * Builds all 12 distinct, high-detail deep-ocean Pelagic Vanguard combat vessels,
+ * per-ship 3D Primary Weapon mounts, Naval Torpedo/Missile racks,
+ * 8 mechanical Instrument Modules, Bolted Reactive Armor tier evolution,
+ * and per-ship variable-geometry GLSL ion-cavitation exhausts.
  */
 export function createVanguardShip(mats: MaterialBank): {
   group: THREE.Group;
@@ -1006,16 +676,22 @@ export function createVanguardShip(mats: MaterialBank): {
     trimHex: number,
     loadout?: Partial<ShipLoadoutVisualConfig>,
   ) => void;
+  setAbilityVisualState: (active: boolean) => void;
   triggerWeaponFire: (isSecondary?: boolean) => void;
+  getPrimaryMuzzleOffsets: () => THREE.Vector3[];
+  getSecondaryMuzzleOffsets: () => THREE.Vector3[];
   updateShipEffects: (
     elapsed: number,
     dt: number,
     surgeBoost: number,
+    turnSteer?: number,
+    damageRatio?: number,
+    isRolling?: boolean,
   ) => void;
 } {
   const group = new THREE.Group();
 
-  // Realistic military naval materials (Zero cartoon / zero neon plastic)
+  // Shared high-fidelity deep-ocean materials
   const heatStainTex = createHeatStainedNozzleTexture();
   const heatStainedNozzleMat = new THREE.MeshStandardMaterial({
     map: heatStainTex,
@@ -1047,69 +723,42 @@ export function createVanguardShip(mats: MaterialBank): {
     bumpScale: 0.022,
   });
 
-  // Subtle tactical navigation / avionics accent material (controlled intensity, never cartoon neon)
   const shipTrimMat = new THREE.MeshStandardMaterial({
     color: 0x38bdf8,
     emissive: 0x0284c7,
-    emissiveIntensity: 0.85,
-    roughness: 0.35,
+    emissiveIntensity: 0.95,
+    roughness: 0.32,
     metalness: 0.65,
   });
 
-  // 1. Vanguard-IX Interceptor Hull: Weathered Cold-Rolled Naval Slate-Titanium
-  const vanguardHullMat = mats.titaniumHull.clone();
-  vanguardHullMat.color.setHex(0x647280);
-  vanguardHullMat.metalness = 0.88;
-  vanguardHullMat.roughness = 0.33;
+  const cloneHull = (hex: number, metalness: number, roughness: number) => {
+    const m = mats.titaniumHull.clone();
+    m.color.setHex(hex);
+    m.metalness = metalness;
+    m.roughness = roughness;
+    return m;
+  };
 
-  // 2. Maelstrom-XII Assault Submarine Hull: Heavy Dark Gunmetal Pressure Steel
-  const assaultHullMat = mats.titaniumHull.clone();
-  assaultHullMat.color.setHex(0x2c343d);
-  assaultHullMat.metalness = 0.85;
-  assaultHullMat.roughness = 0.38;
-
-  // 3. Bathys-Bastion IV Guardian Hull: Deep-Trench Tungsten-Olive Armored Plate
-  const guardianHullMat = mats.titaniumHull.clone();
-  guardianHullMat.color.setHex(0x464d43);
-  guardianHullMat.metalness = 0.84;
-  guardianHullMat.roughness = 0.36;
-
-  // 4. Nautilus-Spectre VII Tactical Hull: Faceted Stealth Charcoal-Titanium & Anechoic Plate
-  const tacticalHullMat = mats.titaniumHull.clone();
-  tacticalHullMat.color.setHex(0x21272f);
-  tacticalHullMat.metalness = 0.78;
-  tacticalHullMat.roughness = 0.4;
-
-  // Realistic Fire & Afterburner Materials (Additive Blending)
-  const fireWhiteCoreMat = new THREE.MeshBasicMaterial({
-    color: 0xfffbeb,
-    transparent: true,
-    opacity: 0.96,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-
-  const fireThermalMidMat = new THREE.MeshBasicMaterial({
-    color: 0xff6b00,
-    transparent: true,
-    opacity: 0.82,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-
-  const fireOuterPlasmaMat = new THREE.MeshBasicMaterial({
-    color: 0x38bdf8,
-    transparent: true,
-    opacity: 0.48,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
+  const palette: ShipMaterialPalette = {
+    mats,
+    heatStainedNozzleMat,
+    machinedSteelMat,
+    navalBronzeMat,
+    anechoicRubberMat,
+    shipTrimMat,
+    whiteTitaniumMat: cloneHull(0xdce6f2, 0.84, 0.24),
+    gunmetalMat: cloneHull(0x28303b, 0.88, 0.34),
+    abyssalCeramicMat: cloneHull(0x131722, 0.68, 0.38),
+    guardianTungstenMat: cloneHull(0x3a444d, 0.86, 0.35),
+    goldGildedMat: cloneHull(0xd4a442, 0.92, 0.22),
+    pearlWhiteMat: cloneHull(0xeaf2f8, 0.76, 0.18),
+    deepNavyMat: cloneHull(0x1e334d, 0.85, 0.3),
+    teakTealMat: cloneHull(0x183c40, 0.78, 0.32),
+    obsidianArmorMat: cloneHull(0x14151c, 0.84, 0.28),
+  };
 
   const muzzleFlashCoreMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+    color: 0xecfeff,
     transparent: true,
     opacity: 0,
     blending: THREE.AdditiveBlending,
@@ -1118,7 +767,7 @@ export function createVanguardShip(mats: MaterialBank): {
   });
 
   const muzzleFlashFireMat = new THREE.MeshBasicMaterial({
-    color: 0xff7b00,
+    color: 0x38bdf8,
     transparent: true,
     opacity: 0,
     blending: THREE.AdditiveBlending,
@@ -1129,2132 +778,182 @@ export function createVanguardShip(mats: MaterialBank): {
   const thrusterAssemblies: ThrusterFlameAssembly[] = [];
 
   // ============================================================================
-  // 1. FOUR UNIQUE, REALISTIC NAVAL COMBAT SUBMARINES & HYDRO-FIGHTERS
+  // 1. ALL 12 UNIQUE PELAGIC VANGUARD COMBAT VESSEL CHASSIS
   // ============================================================================
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS A: VANGUARD-IX INTERCEPTOR
-  // (High-Speed Supercavitating Naval Strike Hydro-Fighter — F-14 / Su-33 / Shkval Hybrid)
-  // ----------------------------------------------------------------------------
-  const interceptorChassis = new THREE.Group();
-  {
-    // Sculpted multi-station hydro-fighter pressure fuselage
-    const lathePoints = [
-      new THREE.Vector2(0.01, -2.95),
-      new THREE.Vector2(0.11, -2.65),
-      new THREE.Vector2(0.26, -2.05),
-      new THREE.Vector2(0.54, -1.05),
-      new THREE.Vector2(0.66, -0.15),
-      new THREE.Vector2(0.64, 0.85),
-      new THREE.Vector2(0.48, 1.55),
-      new THREE.Vector2(0.22, 1.95),
-      new THREE.Vector2(0.02, 2.1),
-    ];
-    const fuselageGeo = new THREE.LatheGeometry(lathePoints, 28);
-    fuselageGeo.rotateX(Math.PI / 2);
-    fuselageGeo.scale(1.08, 0.64, 1.0);
-    const fuselage = new THREE.Mesh(fuselageGeo, vanguardHullMat);
-    fuselage.castShadow = true;
-    fuselage.receiveShadow = true;
-    interceptorChassis.add(fuselage);
-
-    // Machined steel supercavitating nose disk & pitot/sonar sting probe
-    const cavitatorTip = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.09, 0.14, 0.22, 16).rotateX(Math.PI / 2),
-      machinedSteelMat,
-    );
-    cavitatorTip.position.set(0, 0, -2.98);
-    const pitotProbe = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.012, 0.024, 0.55, 8).rotateX(Math.PI / 2),
-      machinedSteelMat,
-    );
-    pitotProbe.position.set(0, -0.02, -3.28);
-    interceptorChassis.add(cavitatorTip, pitotProbe);
-
-    // Raised dorsal avionics & ballast spine fairing with panel ribs
-    const dorsalSpine = new THREE.Mesh(
-      new THREE.BoxGeometry(0.42, 0.22, 2.35),
-      vanguardHullMat,
-    );
-    dorsalSpine.position.set(0, 0.34, 0.45);
-    interceptorChassis.add(dorsalSpine);
-
-    for (let i = 0; i < 6; i++) {
-      const rib = new THREE.Mesh(
-        new THREE.BoxGeometry(0.46, 0.05, 0.08),
-        mats.darkGraphiteTrim,
-      );
-      rib.position.set(0, 0.44, -0.35 + i * 0.32);
-      interceptorChassis.add(rib);
-    }
-
-    // Twin lateral variable-ramp hydro-intakes with internal turbine fan faces
-    [-0.68, 0.68].forEach((sideX) => {
-      const intakeBox = new THREE.Mesh(
-        new THREE.BoxGeometry(0.44, 0.34, 1.85),
-        vanguardHullMat,
-      );
-      intakeBox.position.set(sideX, -0.06, -0.05);
-      intakeBox.rotation.z = sideX < 0 ? 0.12 : -0.12;
-
-      const intakeSplitter = new THREE.Mesh(
-        new THREE.BoxGeometry(0.04, 0.32, 0.48),
-        machinedSteelMat,
-      );
-      intakeSplitter.position.set(sideX * 0.88, -0.06, -1.02);
-
-      const intakeLip = new THREE.Mesh(
-        new THREE.BoxGeometry(0.46, 0.36, 0.12),
-        mats.darkGraphiteTrim,
-      );
-      intakeLip.position.set(sideX, -0.06, -0.96);
-
-      const compressorFan = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.14, 0.14, 0.06, 12).rotateX(Math.PI / 2),
-        machinedSteelMat,
-      );
-      compressorFan.position.set(sideX, -0.06, -0.88);
-
-      interceptorChassis.add(
-        intakeBox,
-        intakeSplitter,
-        intakeLip,
-        compressorFan,
-      );
-    });
-
-    // Variable-sweep naval strike hydro-wings with leading-edge slats & trailing flaps
-    const wingShape = new THREE.Shape();
-    wingShape.moveTo(0.58, -0.65);
-    wingShape.lineTo(1.45, -0.25);
-    wingShape.lineTo(3.12, 0.55);
-    wingShape.lineTo(3.05, 1.12);
-    wingShape.lineTo(1.55, 0.92);
-    wingShape.lineTo(0.58, 1.25);
-    wingShape.closePath();
-
-    const wingGeo = new THREE.ExtrudeGeometry(wingShape, {
-      steps: 1,
-      depth: 0.09,
-      bevelEnabled: true,
-      bevelThickness: 0.025,
-      bevelSize: 0.025,
-      bevelSegments: 2,
-    });
-    wingGeo.rotateX(Math.PI / 2);
-
-    const rWing = new THREE.Mesh(wingGeo, vanguardHullMat);
-    rWing.position.set(0, 0.04, 0);
-    const lWing = new THREE.Mesh(wingGeo, vanguardHullMat);
-    lWing.scale.set(-1, 1, 1);
-    lWing.position.set(0, 0.04, 0);
-    interceptorChassis.add(rWing, lWing);
-
-    // Hinged ailerons, flap actuator fairings, and wingtip cavitation launch rails
-    [-1, 1].forEach((dir) => {
-      const aileron = new THREE.Mesh(
-        new THREE.BoxGeometry(1.15, 0.04, 0.24),
-        mats.darkGraphiteTrim,
-      );
-      aileron.position.set(dir * 2.15, 0.0, 1.02);
-      aileron.rotation.y = dir * -0.11;
-
-      const wingtipRail = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.045, 0.045, 1.25, 10).rotateX(Math.PI / 2),
-        machinedSteelMat,
-      );
-      wingtipRail.position.set(dir * 3.1, 0.0, 0.72);
-
-      // Fairing blisters for hydraulic flap actuators
-      for (let f = 0; f < 2; f++) {
-        const blister = new THREE.Mesh(
-          new THREE.ConeGeometry(0.045, 0.42, 8).rotateX(Math.PI / 2),
-          machinedSteelMat,
-        );
-        blister.position.set(dir * (1.35 + f * 0.65), -0.06, 0.75 + f * 0.12);
-        interceptorChassis.add(blister);
-      }
-
-      interceptorChassis.add(aileron, wingtipRail);
-    });
-
-    // Forward retractable bow dive planes (canards) with machined pivot spindles
-    [-1, 1].forEach((dir) => {
-      const canard = new THREE.Mesh(
-        new THREE.BoxGeometry(0.88, 0.045, 0.36),
-        mats.darkGraphiteTrim,
-      );
-      canard.position.set(dir * 0.68, 0.0, -1.52);
-      canard.rotation.y = dir * -0.22;
-      interceptorChassis.add(canard);
-    });
-
-    // Twin canted vertical stabilizers with rudder seams & mass-balance tips
-    [-1, 1].forEach((dir) => {
-      const tailFin = new THREE.Mesh(
-        new THREE.BoxGeometry(0.07, 0.96, 0.88),
-        vanguardHullMat,
-      );
-      tailFin.position.set(dir * 0.78, 0.5, 1.28);
-      tailFin.rotation.z = dir * -0.28;
-
-      const rudder = new THREE.Mesh(
-        new THREE.BoxGeometry(0.05, 0.84, 0.24),
-        mats.darkGraphiteTrim,
-      );
-      rudder.position.set(dir * 0.86, 0.48, 1.78);
-      rudder.rotation.z = dir * -0.28;
-
-      const topPod = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.035, 0.035, 0.55, 8).rotateX(Math.PI / 2),
-        machinedSteelMat,
-      );
-      topPod.position.set(dir * 0.91, 0.94, 1.32);
-
-      interceptorChassis.add(tailFin, rudder, topPod);
-    });
-
-    // Detailed Cockpit Interior + Framed Smoked Armored Quartz Canopy
-    const cockpitInterior = createCockpitInterior(
-      mats.darkGraphiteTrim,
-      anechoicRubberMat,
-      shipTrimMat,
-    );
-    cockpitInterior.position.set(0, 0.26, -0.78);
-    interceptorChassis.add(cockpitInterior);
-
-    const canopyGeo = new THREE.SphereGeometry(
-      0.46,
-      20,
-      14,
-      0,
-      Math.PI * 2,
-      0,
-      Math.PI * 0.52,
-    );
-    canopyGeo.scale(0.78, 0.68, 2.05);
-    const canopy = new THREE.Mesh(canopyGeo, mats.sapphireCanopy);
-    canopy.position.set(0, 0.26, -0.75);
-    canopy.renderOrder = 4;
-    interceptorChassis.add(canopy);
-
-    // Heavy bolted steel canopy frame arches & center spine bar
-    [-1.12, -0.68, -0.22].forEach((zPos, idx) => {
-      const archRadius = idx === 1 ? 0.35 : 0.31;
-      const arch = new THREE.Mesh(
-        new THREE.TorusGeometry(archRadius, 0.024, 8, 18, Math.PI),
-        mats.darkGraphiteTrim,
-      );
-      arch.position.set(0, 0.25, zPos);
-      interceptorChassis.add(arch);
-    });
-    const canopySpine = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.035, 1.45),
-      mats.darkGraphiteTrim,
-    );
-    canopySpine.position.set(0, 0.56, -0.72);
-    interceptorChassis.add(canopySpine);
-
-    // Twin Armored Engine Nacelles + Variable-Geometry Heat-Stained Nozzles
-    [-0.56, 0.56].forEach((sideX) => {
-      const nacelle = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.29, 0.32, 1.95, 18).rotateX(Math.PI / 2),
-         mats.darkGraphiteTrim,
-      );
-      nacelle.position.set(sideX, -0.02, 0.82);
-      interceptorChassis.add(nacelle);
-
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        0.95,
-      );
-      fl.root.position.set(sideX, -0.02, 1.92);
-      interceptorChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  group.add(interceptorChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS B: MAELSTROM-XII ASSAULT SUBMARINE
-  // (Heavy Typhoon / Seawolf-Class Naval Ballistic & Attack Submarine)
-  // ----------------------------------------------------------------------------
-  const assaultChassis = new THREE.Group();
-  {
-    // Main cylindrical/ovoid double-pressure submarine hull (smooth lathed bow-to-stern)
-    const subPoints = [
-      new THREE.Vector2(0.01, -3.05),
-      new THREE.Vector2(0.38, -2.85),
-      new THREE.Vector2(0.68, -2.35),
-      new THREE.Vector2(0.82, -1.45),
-      new THREE.Vector2(0.84, 0.45),
-      new THREE.Vector2(0.72, 1.45),
-      new THREE.Vector2(0.42, 2.05),
-      new THREE.Vector2(0.05, 2.25),
-    ];
-    const mainPressureHullGeo = new THREE.LatheGeometry(subPoints, 28);
-    mainPressureHullGeo.rotateX(Math.PI / 2);
-    mainPressureHullGeo.scale(1.18, 0.78, 1.0);
-    const mainPressureHull = new THREE.Mesh(mainPressureHullGeo, assaultHullMat);
-    mainPressureHull.castShadow = true;
-    mainPressureHull.receiveShadow = true;
-    assaultChassis.add(mainPressureHull);
-
-    // Spherical rubberized acoustic sonar dome on the bow + 6 recessed torpedo tube shutters
-    const bowSonarCap = new THREE.Mesh(
-      new THREE.SphereGeometry(0.64, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.55),
-      anechoicRubberMat,
-    );
-    bowSonarCap.rotation.x = -Math.PI / 2;
-    bowSonarCap.scale.set(1.12, 1.0, 0.72);
-    bowSonarCap.position.set(0, 0, -2.42);
-    assaultChassis.add(bowSonarCap);
-
-    // 6 mechanical bow torpedo tube muzzle doors (3 port, 3 starboard)
-    [-1, 1].forEach((side) => {
-      for (let t = 0; t < 3; t++) {
-        const tubeDoor = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.09, 0.09, 0.35, 12).rotateX(Math.PI / 2),
-          machinedSteelMat,
-        );
-        tubeDoor.position.set(
-          side * (0.28 + t * 0.18),
-          0.08 - t * 0.08,
-          -2.55 + t * 0.14,
-        );
-        assaultChassis.add(tubeDoor);
-      }
-    });
-
-    // Port & Starboard Typhoon-style Armored Lateral Ballast / Torpedo Saddle Blisters
-    [-1.08, 1.08].forEach((sideX) => {
-      const blisterGeo = new THREE.CapsuleGeometry(0.42, 2.65, 10, 18);
-      blisterGeo.rotateX(Math.PI / 2);
-      blisterGeo.scale(0.88, 0.72, 1.0);
-      const blister = new THREE.Mesh(blisterGeo, assaultHullMat);
-      blister.position.set(sideX, -0.08, -0.15);
-      assaultChassis.add(blister);
-
-      // Ballast tank flood vent grilles & sacrificial zinc anodes along the flanks
-      for (let v = 0; v < 5; v++) {
-        const floodGrille = new THREE.Mesh(
-          new THREE.BoxGeometry(0.08, 0.14, 0.34),
-          anechoicRubberMat,
-        );
-        floodGrille.position.set(
-          sideX * 1.32,
-          -0.12,
-          -1.15 + v * 0.55,
-        );
-        assaultChassis.add(floodGrille);
-      }
-    });
-
-    // Raised Dorsal Tortoise-Back VLS Missile Deck + 8 Mechanical VLS Missile Hatches
-    const vlsDeck = new THREE.Mesh(
-      new THREE.BoxGeometry(1.12, 0.32, 2.75),
-      assaultHullMat,
-    );
-    vlsDeck.position.set(0, 0.56, 0.05);
-    assaultChassis.add(vlsDeck);
-
-    // 2 rows of 4 VLS vertical launch hatches with mechanical hinges (front 2 slightly open!)
-    [-0.3, 0.3].forEach((rowX) => {
-      for (let h = 0; h < 4; h++) {
-        const hz = -0.35 + h * 0.52;
-        const hatchRing = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.19, 0.21, 0.08, 14),
-          mats.darkGraphiteTrim,
-        );
-        hatchRing.position.set(rowX, 0.72, hz);
-        assaultChassis.add(hatchRing);
-
-        if (h === 0) {
-          // Open VLS hatch door + visible heavy ballistic torpedo warhead inside silo
-          const openLid = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.18, 0.18, 0.04, 14),
-            machinedSteelMat,
-          );
-          openLid.position.set(rowX + (rowX < 0 ? -0.18 : 0.18), 0.86, hz);
-          openLid.rotation.z = rowX < 0 ? 0.95 : -0.95;
-
-          const siloWarhead = new THREE.Mesh(
-            new THREE.ConeGeometry(0.13, 0.28, 12),
-            navalBronzeMat,
-          );
-          siloWarhead.position.set(rowX, 0.78, hz);
-          assaultChassis.add(openLid, siloWarhead);
-        } else {
-          const closedLid = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.18, 0.18, 0.05, 14),
-            machinedSteelMat,
-          );
-          closedLid.position.set(rowX, 0.75, hz);
-          assaultChassis.add(closedLid);
-        }
-      }
-    });
-
-    // Submarine Conning Tower (Sail / Fin) with armored bridge windows, fairwater planes, and periscope masts
-    const sailGroup = new THREE.Group();
-    sailGroup.position.set(0, 0.82, -1.18);
-
-    const sailTower = new THREE.Mesh(
-      new THREE.BoxGeometry(0.46, 0.68, 1.15),
-      assaultHullMat,
-    );
-    const sailNose = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.23, 0.23, 0.68, 16),
-      assaultHullMat,
-    );
-    sailNose.position.set(0, 0, -0.575);
-    sailGroup.add(sailTower, sailNose);
-
-    // Armored Submarine Bridge Viewport Slit
-    const bridgeVisor = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.245, 0.245, 0.16, 16, 1, false, -Math.PI * 0.4, Math.PI * 0.8),
-      mats.sapphireCanopy,
-    );
-    bridgeVisor.rotation.y = Math.PI;
-    bridgeVisor.position.set(0, 0.16, -0.58);
-    sailGroup.add(bridgeVisor);
-
-    // Fairwater diving planes mounted on the Conning Tower
-    const fairwaterPlanes = new THREE.Mesh(
-      new THREE.BoxGeometry(1.58, 0.055, 0.36),
-      mats.darkGraphiteTrim,
-    );
-    fairwaterPlanes.position.set(0, 0.08, -0.25);
-    sailGroup.add(fairwaterPlanes);
-
-    // Telescoping Attack Periscope, Radar Mast, and Optronic Sensor Head
-    const periscopeMast = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.032, 0.04, 0.58, 10),
-      machinedSteelMat,
-    );
-    periscopeMast.position.set(-0.08, 0.56, -0.28);
-    const periscopeHead = new THREE.Mesh(
-      new THREE.BoxGeometry(0.11, 0.09, 0.14),
-      mats.darkGraphiteTrim,
-    );
-    periscopeHead.position.set(-0.08, 0.85, -0.3);
-
-    const radarMast = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.025, 0.035, 0.46, 10),
-      machinedSteelMat,
-    );
-    radarMast.position.set(0.09, 0.5, 0.08);
-    const esmBulb = new THREE.Mesh(
-      new THREE.SphereGeometry(0.055, 10, 10),
-      navalBronzeMat,
-    );
-    esmBulb.position.set(0.09, 0.74, 0.08);
-
-    sailGroup.add(periscopeMast, periscopeHead, radarMast, esmBulb);
-    assaultChassis.add(sailGroup);
-
-    // Heavy Retractable Bow Hydroplanes & Swept Lateral Stabilizer Wings
-    const bowPlanes = new THREE.Mesh(
-      new THREE.BoxGeometry(2.65, 0.07, 0.52),
-      mats.darkGraphiteTrim,
-    );
-    bowPlanes.position.set(0, 0.02, -1.78);
-    assaultChassis.add(bowPlanes);
-
-    const mainHydroWing = new THREE.Mesh(
-      new THREE.BoxGeometry(5.6, 0.14, 1.05),
-      assaultHullMat,
-    );
-    mainHydroWing.position.set(0, -0.06, 0.35);
-    assaultChassis.add(mainHydroWing);
-
-    // Cruciform Stern Control Surfaces (Upper/Lower Vertical Rudders + Stern Planes)
-    const upperRudder = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 1.25, 0.85),
-      mats.darkGraphiteTrim,
-    );
-    upperRudder.position.set(0, 0.52, 1.65);
-    const sternPlanes = new THREE.Mesh(
-      new THREE.BoxGeometry(2.45, 0.09, 0.72),
-      mats.darkGraphiteTrim,
-    );
-    sternPlanes.position.set(0, 0.0, 1.65);
-    assaultChassis.add(upperRudder, sternPlanes);
-
-    // QUAD Shrouded Naval Pump-Jet / Variable-Geometry Exhaust Nozzles
-    const quadCoords = [
-      [-1.15, -0.06, 1.75],
-      [-0.52, -0.02, 1.98],
-      [0.52, -0.02, 1.98],
-      [1.15, -0.06, 1.75],
-    ];
-    quadCoords.forEach(([x, y, z], idx) => {
-      // Pump-jet annular shroud duct around outer propulsors
-      const ductShroud = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.32, 0.35, 0.52, 18, 1, true).rotateX(
-          Math.PI / 2,
-        ),
-        assaultHullMat,
-      );
-      ductShroud.position.set(x, y, z - 0.15);
-      assaultChassis.add(ductShroud);
-
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        idx === 1 || idx === 2 ? 0.86 : 0.76,
-      );
-      fl.root.position.set(x, y, z);
-      assaultChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  assaultChassis.visible = false;
-  group.add(assaultChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS C: BATHYS-BASTION IV GUARDIAN
-  // (Deep-Trench Twin-Hull Armored DSRV Bathyscaphe & Heavy Escort Submersible)
-  // ----------------------------------------------------------------------------
-  const guardianChassis = new THREE.Group();
-  {
-    // Central Reinforced Spherical/Cylindrical Titanium Pressure Hull
-    const centralHull = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.76, 1.85, 16, 24).rotateX(Math.PI / 2),
-      guardianHullMat,
-    );
-    centralHull.scale.set(1.12, 0.82, 1.0);
-    centralHull.position.set(0, 0.08, -0.05);
-    guardianChassis.add(centralHull);
-
-    // Forward Deep-Submergence Spherical Titanium Crew Cabin with Bolted Viewport Cupola
-    const cabinSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.68, 22, 18),
-      machinedSteelMat,
-    );
-    cabinSphere.position.set(0, 0.14, -1.25);
-    guardianChassis.add(cabinSphere);
-
-    // Smoked Quartz Bathyscaphe Viewport + Heavy Bolted Steel Bezel Ring
-    const mainViewport = new THREE.Mesh(
-      new THREE.SphereGeometry(
-        0.48,
-        18,
-        14,
-        0,
-        Math.PI * 2,
-        0,
-        Math.PI * 0.45,
-      ),
-      mats.sapphireCanopy,
-    );
-    mainViewport.rotation.x = -Math.PI * 0.35;
-    mainViewport.position.set(0, 0.24, -1.52);
-    mainViewport.renderOrder = 4;
-
-    const viewportBezel = new THREE.Mesh(
-      new THREE.TorusGeometry(0.42, 0.055, 10, 20),
-      mats.darkGraphiteTrim,
-    );
-    viewportBezel.rotation.x = Math.PI * 0.15;
-    viewportBezel.position.set(0, 0.26, -1.78);
-    guardianChassis.add(mainViewport, viewportBezel);
-
-    // Protective Steel Roll-Cage Guard Bars over the Crew Sphere
-    for (let b = -1; b <= 1; b++) {
-      const cageArch = new THREE.Mesh(
-        new THREE.TorusGeometry(0.74, 0.032, 8, 20, Math.PI),
-        machinedSteelMat,
-      );
-      cageArch.position.set(0, 0.14, -1.15 + b * 0.32);
-      guardianChassis.add(cageArch);
-    }
-
-    // Twin Heavy Catamaran Armored Side Pontoons (Spaced Ballast & Shield Bulwarks)
-    [-1.78, 1.78].forEach((sideX) => {
-      const pontoon = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.48, 2.55, 12, 20).rotateX(Math.PI / 2),
-        guardianHullMat,
-      );
-      pontoon.scale.set(0.95, 0.85, 1.0);
-      pontoon.position.set(sideX, -0.04, 0.05);
-      guardianChassis.add(pontoon);
-
-      // Sloped Explosive Reactive Armor (ERA) / Spaced Titanium Plates bolted to outer pontoons
-      for (let p = 0; p < 5; p++) {
-        const eraBlock = new THREE.Mesh(
-          new THREE.BoxGeometry(0.16, 0.42, 0.52),
-          mats.darkGraphiteTrim,
-        );
-        eraBlock.position.set(
-          sideX + (sideX < 0 ? -0.44 : 0.44),
-          -0.02,
-          -1.08 + p * 0.56,
-        );
-        eraBlock.rotation.z = sideX < 0 ? 0.18 : -0.18;
-        guardianChassis.add(eraBlock);
-      }
-
-      // Forward Articulated Hydro-Bulwark Ramming Shields + Hydraulic Pistons
-      const bowBumper = new THREE.Mesh(
-        new THREE.BoxGeometry(0.78, 0.48, 0.22),
-        machinedSteelMat,
-      );
-      bowBumper.position.set(sideX, -0.04, -1.78);
-      bowBumper.rotation.y = sideX < 0 ? 0.25 : -0.25;
-      guardianChassis.add(bowBumper);
-
-      // Structural Steel Cross-Bridge Trusses connecting Central Hull to Pontoons
-      [-0.75, 0.75].forEach((zBridge) => {
-        const strut = new THREE.Mesh(
-          new THREE.BoxGeometry(1.35, 0.28, 0.44),
-          mats.darkGraphiteTrim,
-        );
-        strut.position.set(sideX * 0.55, 0.02, zBridge);
-
-        const airFlask = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.11, 0.11, 0.95, 12).rotateZ(Math.PI / 2),
-          navalBronzeMat,
-        );
-        airFlask.position.set(sideX * 0.55, 0.22, zBridge);
-        guardianChassis.add(strut, airFlask);
-      });
-    });
-
-    // Dorsal Mechanical Active-Defense Countermeasure Turret & Towed-Winch Superstructure
-    // (Replaces the old floating sci-fi torus halo with real naval hardware)
-    const dorsalDeck = new THREE.Mesh(
-      new THREE.BoxGeometry(1.18, 0.28, 1.65),
-       mats.darkGraphiteTrim,
-    );
-    dorsalDeck.position.set(0, 0.64, 0.25);
-    guardianChassis.add(dorsalDeck);
-
-    // Twin 6-Cell Acoustic Countermeasure / Decoy Mortar Pods on Dorsal Deck
-    [-0.44, 0.44].forEach((mx) => {
-      const mortarBox = new THREE.Mesh(
-        new THREE.BoxGeometry(0.28, 0.26, 0.42),
-        machinedSteelMat,
-      );
-      mortarBox.position.set(mx, 0.84, 0.05);
-      mortarBox.rotation.x = -0.35;
-      guardianChassis.add(mortarBox);
-    });
-
-    // Dorsal Armored Acoustic Dome & Recovery Crane Davit Arch
-    const sonarDome = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.36, 0.42, 0.24, 18),
-      anechoicRubberMat,
-    );
-    sonarDome.position.set(0, 0.86, 0.62);
-    const gantryFrame = new THREE.Mesh(
-      new THREE.TorusGeometry(0.62, 0.045, 8, 16, Math.PI),
-      machinedSteelMat,
-    );
-    gantryFrame.position.set(0, 0.65, 0.95);
-    gantryFrame.rotation.x = -0.25;
-    guardianChassis.add(sonarDome, gantryFrame);
-
-    // Triple Heavy Shrouded Vectoring Thrusters (Center Main + Port/Starboard Pontoons)
-    const triCoords = [
-      [-1.78, -0.04, 1.82],
-      [0, 0.04, 1.98],
-      [1.78, -0.04, 1.82],
-    ];
-    triCoords.forEach(([x, y, z], idx) => {
-      const s = idx === 1 ? 1.15 : 0.92;
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        s,
-      );
-      fl.root.position.set(x, y, z);
-      guardianChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  guardianChassis.visible = false;
-  group.add(guardianChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS D: NAUTILUS-SPECTRE VII TACTICAL
-  // (Faceted Stealth Naval Recon Sub-Fighter — Lockheed Sea Shadow / X-Craft Prototype)
-  // ----------------------------------------------------------------------------
-  const tacticalChassis = new THREE.Group();
-  let tacticalAwacsDish = new THREE.Group();
-  {
-    // Faceted Chined Stealth Fuselage (Radar/Sonar-deflecting flat angular planes)
-    const stealthShape = new THREE.Shape();
-    stealthShape.moveTo(0, -3.05);
-    stealthShape.lineTo(0.68, -1.85);
-    stealthShape.lineTo(3.15, 0.35);
-    stealthShape.lineTo(2.75, 1.42);
-    stealthShape.lineTo(1.38, 1.08);
-    stealthShape.lineTo(0.65, 1.75);
-    stealthShape.lineTo(0, 1.42);
-    stealthShape.lineTo(-0.65, 1.75);
-    stealthShape.lineTo(-1.38, 1.08);
-    stealthShape.lineTo(-2.75, 1.42);
-    stealthShape.lineTo(-3.15, 0.35);
-    stealthShape.lineTo(-0.68, -1.85);
-    stealthShape.closePath();
-
-    const stealthGeo = new THREE.ExtrudeGeometry(stealthShape, {
-      steps: 1,
-      depth: 0.22,
-      bevelEnabled: true,
-      bevelThickness: 0.09,
-      bevelSize: 0.12,
-      bevelSegments: 1, // Crisp faceted stealth chines
-    });
-    stealthGeo.rotateX(Math.PI / 2);
-    const stealthBody = new THREE.Mesh(stealthGeo, tacticalHullMat);
-    stealthBody.position.set(0, 0.1, 0);
-    stealthBody.castShadow = true;
-    stealthBody.receiveShadow = true;
-    tacticalChassis.add(stealthBody);
-
-    // Upper Faceted Spine Ridge with Anechoic Acoustic Tile Panels
-    const upperRidgeGeo = new THREE.CylinderGeometry(0.28, 0.72, 3.65, 4);
-    upperRidgeGeo.rotateY(Math.PI / 4);
-    upperRidgeGeo.rotateX(Math.PI / 2);
-    upperRidgeGeo.scale(1.15, 0.42, 1.0);
-    const upperRidge = new THREE.Mesh(upperRidgeGeo, anechoicRubberMat);
-    upperRidge.position.set(0, 0.24, -0.15);
-    tacticalChassis.add(upperRidge);
-
-    // Forward Dual Machined Steel Pitot-Acoustic Probes & Serrated Chines
-    [-0.38, 0.38].forEach((px) => {
-      const probe = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.015, 0.04, 0.85, 6).rotateX(Math.PI / 2),
-        machinedSteelMat,
-      );
-      probe.position.set(px, -0.02, -2.55);
-      tacticalChassis.add(probe);
-    });
-
-    // Cockpit Interior + Flush Faceted Armored Stealth Canopy with Sawtooth Frame
-    const stealthInterior = createCockpitInterior(
-      mats.darkGraphiteTrim,
-      anechoicRubberMat,
-      shipTrimMat,
-    );
-    stealthInterior.position.set(0, 0.22, -0.95);
-    stealthInterior.scale.setScalar(0.86);
-    tacticalChassis.add(stealthInterior);
-
-    const stealthCanopyGeo = new THREE.CylinderGeometry(0.22, 0.48, 1.48, 4);
-    stealthCanopyGeo.rotateY(Math.PI / 4);
-    stealthCanopyGeo.rotateX(-Math.PI / 2);
-    stealthCanopyGeo.scale(1.05, 0.42, 1.0);
-    const stealthCanopy = new THREE.Mesh(stealthCanopyGeo, mats.sapphireCanopy);
-    stealthCanopy.position.set(0, 0.32, -0.92);
-    stealthCanopy.renderOrder = 4;
-    tacticalChassis.add(stealthCanopy);
-
-    // Bolted Sawtooth Canopy Frame Struts
-    [-1, 1].forEach((side) => {
-      const frameStrut = new THREE.Mesh(
-        new THREE.BoxGeometry(0.04, 0.04, 1.45),
-        machinedSteelMat,
-      );
-      frameStrut.position.set(side * 0.22, 0.38, -0.92);
-      frameStrut.rotation.y = side * -0.14;
-      tacticalChassis.add(frameStrut);
-    });
-
-    // Twin Inward-Canted Faceted Stealth Tail Fins (F-117 / YF-23 style V-tail)
-    [-1, 1].forEach((side) => {
-      const vFin = new THREE.Mesh(
-        new THREE.BoxGeometry(0.06, 0.78, 0.92),
-        tacticalHullMat,
-      );
-      vFin.position.set(side * 0.82, 0.42, 1.15);
-      vFin.rotation.z = side * 0.42;
-      tacticalChassis.add(vFin);
-
-      // Wingtip Passive Hydrophone Tow-Pods
-      const wingPod = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.055, 0.055, 1.15, 8).rotateX(Math.PI / 2),
-        machinedSteelMat,
-      );
-      wingPod.position.set(side * 2.95, 0.02, 0.85);
-      tacticalChassis.add(wingPod);
-    });
-
-    // Rotating Dorsal Naval Phased-Array Sonar & ESM Radar Bar Assembly
-    // (Realistic mechanical rotating naval radar/sonar array instead of sci-fi floating orb)
-    tacticalAwacsDish = new THREE.Group();
-    tacticalAwacsDish.position.set(0, 0.62, 0.38);
-
-    const mastPylon = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.14, 0.22, 0.32, 8),
-      machinedSteelMat,
-    );
-    mastPylon.position.set(0, -0.14, 0);
-
-    const phasedArrayBar = new THREE.Mesh(
-      new THREE.BoxGeometry(1.68, 0.16, 0.34),
-      tacticalHullMat,
-    );
-    const arrayFace = new THREE.Mesh(
-      new THREE.BoxGeometry(1.58, 0.1, 0.36),
-      anechoicRubberMat,
-    );
-    const centerHub = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.24, 0.28, 0.22, 12),
-      mats.darkGraphiteTrim,
-    );
-    const whipAntenna = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.012, 0.022, 0.48, 6),
-      machinedSteelMat,
-    );
-    whipAntenna.position.set(0.62, 0.28, 0);
-
-    tacticalAwacsDish.add(
-      mastPylon,
-      phasedArrayBar,
-      arrayFace,
-      centerHub,
-      whipAntenna,
-    );
-    tacticalChassis.add(tacticalAwacsDish);
-
-    // Twin Shrouded Stealth Variable Exhaust Nozzles
-    const stealthCoords = [
-      [-0.65, -0.02, 1.68],
-      [0.65, -0.02, 1.68],
-    ];
-    stealthCoords.forEach(([x, y, z]) => {
-      // Serrated stealth heat-shield overhang above each nozzle
-      const stealthHood = new THREE.Mesh(
-        new THREE.BoxGeometry(0.58, 0.08, 0.48),
-        anechoicRubberMat,
-      );
-      stealthHood.position.set(x, y + 0.26, z - 0.08);
-      tacticalChassis.add(stealthHood);
-
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        0.88,
-      );
-      fl.root.position.set(x, y, z);
-      tacticalChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  tacticalChassis.visible = false;
-  group.add(tacticalChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS E: BARRACUDA-X SKIMMER (`barracuda_skimmer` — Tier II)
-  // (Forward-Swept Hydrofoil Interceptor with Twin Dorsal Hydro-Turbines)
-  // ----------------------------------------------------------------------------
-  const barracudaHullMat = mats.titaniumHull.clone();
-  barracudaHullMat.color.setHex(0x4b6278);
-  barracudaHullMat.metalness = 0.89;
-  barracudaHullMat.roughness = 0.31;
-
-  const barracudaChassis = new THREE.Group();
-  {
-    // Sleek needle-nose hydro-skimmer pressure hull
-    const barracudaPoints = [
-      new THREE.Vector2(0.01, -3.22),
-      new THREE.Vector2(0.09, -2.85),
-      new THREE.Vector2(0.24, -2.15),
-      new THREE.Vector2(0.48, -1.15),
-      new THREE.Vector2(0.58, -0.05),
-      new THREE.Vector2(0.56, 0.95),
-      new THREE.Vector2(0.42, 1.65),
-      new THREE.Vector2(0.18, 2.02),
-      new THREE.Vector2(0.02, 2.15),
-    ];
-    const bodyGeo = new THREE.LatheGeometry(barracudaPoints, 28);
-    bodyGeo.rotateX(Math.PI / 2);
-    bodyGeo.scale(1.12, 0.62, 1.0);
-    const body = new THREE.Mesh(bodyGeo, barracudaHullMat);
-    body.castShadow = true;
-    body.receiveShadow = true;
-    barracudaChassis.add(body);
-
-    // Supercavitating bronze-tipped needle nose cone & chin acoustic radome blister
-    const noseCone = new THREE.Mesh(
-      new THREE.ConeGeometry(0.13, 0.55, 16).rotateX(-Math.PI / 2),
-      navalBronzeMat,
-    );
-    noseCone.position.set(0, 0, -3.22);
-    const chinSonar = new THREE.Mesh(
-      new THREE.SphereGeometry(0.26, 16, 12),
-      anechoicRubberMat,
-    );
-    chinSonar.scale.set(0.85, 0.52, 1.95);
-    chinSonar.position.set(0, -0.22, -1.95);
-    barracudaChassis.add(noseCone, chinSonar);
-
-    // Forward-swept Su-47 / X-29 style titanium hydrofoils with anti-cavitation fences
-    const fWingShape = new THREE.Shape();
-    fWingShape.moveTo(0.52, -0.25);
-    fWingShape.lineTo(1.45, 0.35);
-    fWingShape.lineTo(3.25, -0.65);
-    fWingShape.lineTo(3.32, -0.15);
-    fWingShape.lineTo(1.75, 1.05);
-    fWingShape.lineTo(0.52, 1.25);
-    fWingShape.closePath();
-
-    const fWingGeo = new THREE.ExtrudeGeometry(fWingShape, {
-      steps: 1,
-      depth: 0.085,
-      bevelEnabled: true,
-      bevelThickness: 0.022,
-      bevelSize: 0.022,
-      bevelSegments: 2,
-    });
-    fWingGeo.rotateX(Math.PI / 2);
-
-    const rFoil = new THREE.Mesh(fWingGeo, barracudaHullMat);
-    rFoil.position.set(0, 0.03, 0);
-    const lFoil = new THREE.Mesh(fWingGeo, barracudaHullMat);
-    lFoil.scale.set(-1, 1, 1);
-    lFoil.position.set(0, 0.03, 0);
-    barracudaChassis.add(rFoil, lFoil);
-
-    // Wing fences, forward canards & wingtip torpedo launch rails
-    [-1, 1].forEach((dir) => {
-      const wingFence = new THREE.Mesh(
-        new THREE.BoxGeometry(0.05, 0.24, 0.95),
-        machinedSteelMat,
-      );
-      wingFence.position.set(dir * 1.85, 0.09, 0.35);
-
-      const tipPod = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.06, 1.45, 10).rotateX(Math.PI / 2),
-        mats.darkGraphiteTrim,
-      );
-      tipPod.position.set(dir * 3.26, 0.0, -0.35);
-
-      const canard = new THREE.Mesh(
-        new THREE.BoxGeometry(1.05, 0.045, 0.32),
-        mats.darkGraphiteTrim,
-      );
-      canard.position.set(dir * 0.62, 0.02, -1.68);
-      canard.rotation.y = dir * 0.24;
-
-      barracudaChassis.add(wingFence, tipPod, canard);
-    });
-
-    // Twin Dorsal Hydro-Turbine Intake Scoops with exposed steel stator blades
-    [-0.44, 0.44].forEach((sx) => {
-      const duct = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.22, 0.25, 1.65, 16).rotateX(Math.PI / 2),
-        barracudaHullMat,
-      );
-      duct.position.set(sx, 0.28, 0.38);
-      const fanRing = new THREE.Mesh(
-        new THREE.TorusGeometry(0.21, 0.032, 8, 16),
-        machinedSteelMat,
-      );
-      fanRing.position.set(sx, 0.28, -0.45);
-      barracudaChassis.add(duct, fanRing);
-    });
-
-    // Cockpit Interior + Bubble Armored Quartz Canopy
-    const interior = createCockpitInterior(
-      mats.darkGraphiteTrim,
-      anechoicRubberMat,
-      shipTrimMat,
-    );
-    interior.position.set(0, 0.24, -0.95);
-    barracudaChassis.add(interior);
-
-    const canopyGeo = new THREE.SphereGeometry(
-      0.44,
-      20,
-      14,
-      0,
-      Math.PI * 2,
-      0,
-      Math.PI * 0.52,
-    );
-    canopyGeo.scale(0.76, 0.66, 2.15);
-    const canopy = new THREE.Mesh(canopyGeo, mats.sapphireCanopy);
-    canopy.position.set(0, 0.25, -0.92);
-    canopy.renderOrder = 4;
-    barracudaChassis.add(canopy);
-
-    // Outward-canted twin vertical stabilizers + ventral hydro-skids
-    [-1, 1].forEach((dir) => {
-      const fin = new THREE.Mesh(
-        new THREE.BoxGeometry(0.065, 0.98, 0.85),
-        barracudaHullMat,
-      );
-      fin.position.set(dir * 0.68, 0.54, 1.32);
-      fin.rotation.z = dir * -0.34;
-      barracudaChassis.add(fin);
-    });
-
-    // 2 Oversized Heat-Stained Variable-Geometry Nozzles
-    [-0.48, 0.48].forEach((sx) => {
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        1.04,
-      );
-      fl.root.position.set(sx, 0.04, 1.98);
-      barracudaChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  barracudaChassis.visible = false;
-  group.add(barracudaChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS F: SEAWOLF-XVI HUNTER-KILLER (`seawolf_hunter` — Tier VI)
-  // (Tear-Drop Nuclear Attack Submarine with Conformal Flank Sonar & 3 Pump-Jets)
-  // ----------------------------------------------------------------------------
-  const seawolfHullMat = mats.titaniumHull.clone();
-  seawolfHullMat.color.setHex(0x2d3b45);
-  seawolfHullMat.metalness = 0.86;
-  seawolfHullMat.roughness = 0.35;
-
-  const seawolfChassis = new THREE.Group();
-  {
-    const subPoints = [
-      new THREE.Vector2(0.01, -3.18),
-      new THREE.Vector2(0.44, -2.92),
-      new THREE.Vector2(0.76, -2.25),
-      new THREE.Vector2(0.88, -1.15),
-      new THREE.Vector2(0.86, 0.55),
-      new THREE.Vector2(0.68, 1.52),
-      new THREE.Vector2(0.36, 2.08),
-      new THREE.Vector2(0.05, 2.25),
-    ];
-    const hullGeo = new THREE.LatheGeometry(subPoints, 30);
-    hullGeo.rotateX(Math.PI / 2);
-    hullGeo.scale(1.12, 0.84, 1.0);
-    const hull = new THREE.Mesh(hullGeo, seawolfHullMat);
-    hull.castShadow = true;
-    hull.receiveShadow = true;
-    seawolfChassis.add(hull);
-
-    // Anechoic rubber bow sonar dome + bronze acoustic transducer strip
-    const bowDome = new THREE.Mesh(
-      new THREE.SphereGeometry(0.66, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.55),
-      anechoicRubberMat,
-    );
-    bowDome.rotation.x = -Math.PI / 2;
-    bowDome.scale.set(1.08, 0.94, 0.78);
-    bowDome.position.set(0, 0, -2.52);
-    seawolfChassis.add(bowDome);
-
-    // Wide Conformal Flank Sonar Arrays + 8 Angled Mid-Body Torpedo Tubes (4 per side)
-    [-1, 1].forEach((dir) => {
-      const flankArray = new THREE.Mesh(
-        new THREE.BoxGeometry(0.14, 0.36, 2.85),
-        anechoicRubberMat,
-      );
-      flankArray.position.set(dir * 0.94, -0.06, -0.25);
-      const bronzeTrim = new THREE.Mesh(
-        new THREE.BoxGeometry(0.16, 0.06, 2.65),
-        navalBronzeMat,
-      );
-      bronzeTrim.position.set(dir * 0.95, -0.06, -0.25);
-      seawolfChassis.add(flankArray, bronzeTrim);
-
-      for (let t = 0; t < 4; t++) {
-        const tube = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.085, 0.085, 0.45, 12).rotateX(Math.PI / 2),
-          machinedSteelMat,
-        );
-        tube.position.set(dir * 0.88, 0.14 - (t % 2) * 0.14, -1.65 + t * 0.36);
-        tube.rotation.y = dir * -0.18;
-        seawolfChassis.add(tube);
-      }
-    });
-
-    // Streamlined Seawolf Conning Tower (Sail) with Fillet Base & Periscope Array
-    const sailFillet = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.28, 0.52, 1.55, 16).rotateX(Math.PI / 2),
-      seawolfHullMat,
-    );
-    sailFillet.scale.set(0.85, 0.55, 1.0);
-    sailFillet.position.set(0, 0.66, -0.95);
-
-    const sailFin = new THREE.Mesh(
-      new THREE.BoxGeometry(0.42, 0.72, 1.25),
-      seawolfHullMat,
-    );
-    sailFin.position.set(0, 0.95, -0.95);
-
-    const bridgeGlass = new THREE.Mesh(
-      new THREE.BoxGeometry(0.44, 0.16, 0.38),
-      mats.sapphireCanopy,
-    );
-    bridgeGlass.position.set(0, 1.12, -1.42);
-    seawolfChassis.add(sailFillet, sailFin, bridgeGlass);
-
-    // 3 Telescoping Masts (Optronic Periscope, ESM Mast, SATCOM Antenna)
-    [-0.28, 0.0, 0.28].forEach((mz, idx) => {
-      const mast = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.028, 0.036, 0.55 - idx * 0.08, 10),
-        machinedSteelMat,
-      );
-      mast.position.set(0, 1.48, -1.1 + mz);
-      const sensor = new THREE.Mesh(
-        new THREE.SphereGeometry(0.055, 10, 10),
-        idx === 0 ? navalBronzeMat : mats.darkGraphiteTrim,
-      );
-      sensor.position.set(0, 1.75 - idx * 0.08, -1.1 + mz);
-      seawolfChassis.add(mast, sensor);
-    });
-
-    // Retractable Bow Diving Planes + Swept Lateral Hydro-Wings with Wingtip Winglets
-    const bowPlanes = new THREE.Mesh(
-      new THREE.BoxGeometry(2.55, 0.065, 0.46),
-      mats.darkGraphiteTrim,
-    );
-    bowPlanes.position.set(0, 0.06, -1.95);
-    const mainPlanes = new THREE.Mesh(
-      new THREE.BoxGeometry(5.85, 0.12, 1.12),
-      seawolfHullMat,
-    );
-    mainPlanes.position.set(0, -0.08, 0.28);
-    seawolfChassis.add(bowPlanes, mainPlanes);
-
-    // Tall Vertical Tail Fin with Teardrop Towed-Array Sonar Pod at the Fin Tip
-    const tailRudder = new THREE.Mesh(
-      new THREE.BoxGeometry(0.09, 1.35, 0.88),
-      mats.darkGraphiteTrim,
-    );
-    tailRudder.position.set(0, 0.58, 1.62);
-    const towedPod = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.11, 0.95, 8, 14).rotateX(Math.PI / 2),
-      machinedSteelMat,
-    );
-    towedPod.position.set(0, 1.24, 1.65);
-    seawolfChassis.add(tailRudder, towedPod);
-
-    // 3 Shrouded Pump-Jet Variable-Geometry Nozzles (1 Center Main + 2 Wing-Root)
-    [
-      [-1.08, -0.06, 1.82, 0.84],
-      [0, 0.0, 2.08, 1.12],
-      [1.08, -0.06, 1.82, 0.84],
-    ].forEach(([x, y, z, sc]) => {
-      const shroud = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.34 * sc, 0.38 * sc, 0.48, 18, 1, true).rotateX(
-          Math.PI / 2,
-        ),
-        seawolfHullMat,
-      );
-      shroud.position.set(x, y, z - 0.16);
-      seawolfChassis.add(shroud);
-
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        sc,
-      );
-      fl.root.position.set(x, y, z);
-      seawolfChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  seawolfChassis.visible = false;
-  group.add(seawolfChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS G: KRAKEN-PRIME VIII SIEGE GUNSHIP (`kraken_siege` — Tier VII)
-  // (Trimaran 3-Hull Naval Siege Submersible with Dorsal Twin-Barrel Deck Gun Turret)
-  // ----------------------------------------------------------------------------
-  const krakenHullMat = mats.titaniumHull.clone();
-  krakenHullMat.color.setHex(0x3b332e);
-  krakenHullMat.metalness = 0.87;
-  krakenHullMat.roughness = 0.36;
-
-  const krakenChassis = new THREE.Group();
-  let krakenTurret = new THREE.Group();
-  {
-    // Central Heavy Command Hull
-    const centerHull = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.68, 2.65, 16, 24).rotateX(Math.PI / 2),
-      krakenHullMat,
-    );
-    centerHull.scale.set(1.08, 0.78, 1.0);
-    centerHull.position.set(0, 0.04, -0.15);
-    krakenChassis.add(centerHull);
-
-    // Forward Armored Command Cockpit & Bow Siege Ramming Prow
-    const prowBlade = new THREE.Mesh(
-      new THREE.ConeGeometry(0.48, 1.15, 6).rotateX(-Math.PI / 2),
-      machinedSteelMat,
-    );
-    prowBlade.scale.set(1.15, 0.65, 1.0);
-    prowBlade.position.set(0, -0.06, -2.35);
-
-    const bridgeCanopy = new THREE.Mesh(
-      new THREE.BoxGeometry(0.76, 0.28, 0.92),
-      mats.sapphireCanopy,
-    );
-    bridgeCanopy.position.set(0, 0.42, -1.18);
-    bridgeCanopy.renderOrder = 4;
-    krakenChassis.add(prowBlade, bridgeCanopy);
-
-    // Twin Outrigger Torpedo & Siege Hulls connected via Angled Box-Girder Hydrofoils
-    [-2.05, 2.05].forEach((sideX) => {
-      const outrigger = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.38, 2.35, 12, 18).rotateX(Math.PI / 2),
-        krakenHullMat,
-      );
-      outrigger.position.set(sideX, -0.06, 0.15);
-
-      const noseCap = new THREE.Mesh(
-        new THREE.ConeGeometry(0.36, 0.75, 14).rotateX(-Math.PI / 2),
-        navalBronzeMat,
-      );
-      noseCap.position.set(sideX, -0.06, -1.38);
-
-      const crossStrutFront = new THREE.Mesh(
-        new THREE.BoxGeometry(1.65, 0.18, 0.52),
-        mats.darkGraphiteTrim,
-      );
-      crossStrutFront.position.set(sideX * 0.54, 0.0, -0.55);
-      crossStrutFront.rotation.y = sideX < 0 ? 0.22 : -0.22;
-
-      const crossStrutRear = new THREE.Mesh(
-        new THREE.BoxGeometry(1.65, 0.18, 0.58),
-        mats.darkGraphiteTrim,
-      );
-      crossStrutRear.position.set(sideX * 0.54, 0.0, 0.85);
-      crossStrutRear.rotation.y = sideX < 0 ? -0.15 : 0.15;
-
-      // Vertical stabilizer fin on each outrigger
-      const outFin = new THREE.Mesh(
-        new THREE.BoxGeometry(0.07, 0.78, 0.74),
-        krakenHullMat,
-      );
-      outFin.position.set(sideX, 0.46, 1.05);
-
-      krakenChassis.add(
-        outrigger,
-        noseCap,
-        crossStrutFront,
-        crossStrutRear,
-        outFin,
-      );
-    });
-
-    // Rotating Dorsal Twin-Barrel Naval Deck Gun Turret (`krakenTurret`)
-    krakenTurret = new THREE.Group();
-    krakenTurret.position.set(0, 0.62, 0.18);
-
-    const turretBarbette = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.48, 0.54, 0.22, 16),
-      mats.darkGraphiteTrim,
-    );
-    turretBarbette.position.set(0, -0.08, 0);
-
-    const turretHouse = new THREE.Mesh(
-      new THREE.BoxGeometry(0.74, 0.32, 0.88),
-      krakenHullMat,
-    );
-    turretHouse.position.set(0, 0.12, 0.05);
-
-    [-0.18, 0.18].forEach((bx) => {
-      const gunBarrel = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.055, 0.075, 1.45, 12).rotateX(Math.PI / 2),
-        machinedSteelMat,
-      );
-      gunBarrel.position.set(bx, 0.14, -0.85);
-      const recoilSleeve = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.095, 0.095, 0.48, 12).rotateX(Math.PI / 2),
-        navalBronzeMat,
-      );
-      recoilSleeve.position.set(bx, 0.14, -0.45);
-      krakenTurret.add(gunBarrel, recoilSleeve);
-    });
-    krakenChassis.add(krakenTurret);
-
-    // 4 Variable-Geometry Afterburners (2 Central + 2 Outrigger)
-    [
-      [-2.05, -0.06, 1.68, 0.82],
-      [-0.44, 0.02, 1.92, 0.96],
-      [0.44, 0.02, 1.92, 0.96],
-      [2.05, -0.06, 1.68, 0.82],
-    ].forEach(([x, y, z, sc]) => {
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        sc,
-      );
-      fl.root.position.set(x, y, z);
-      krakenChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  krakenChassis.visible = false;
-  group.add(krakenChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS H: POSEIDON-VANGUARD XI CARRIER (`poseidon_carrier` — Tier VIII)
-  // (Wide-Beam Submersible Tactical Strike Carrier with Twin Island Towers & 12-Cell VLS)
-  // ----------------------------------------------------------------------------
-  const poseidonHullMat = mats.titaniumHull.clone();
-  poseidonHullMat.color.setHex(0x34423e);
-  poseidonHullMat.metalness = 0.85;
-  poseidonHullMat.roughness = 0.36;
-
-  const poseidonChassis = new THREE.Group();
-  let poseidonRadar = new THREE.Group();
-  {
-    // Lower Heavy Pressure Hull + Wide Armored Flight/Launch Deck Superstructure
-    const lowerHull = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.78, 2.75, 16, 22).rotateX(Math.PI / 2),
-      poseidonHullMat,
-    );
-    lowerHull.scale.set(1.42, 0.68, 1.0);
-    lowerHull.position.set(0, -0.08, -0.05);
-
-    const carrierDeck = new THREE.Mesh(
-      new THREE.BoxGeometry(2.68, 0.26, 3.85),
-      poseidonHullMat,
-    );
-    carrierDeck.position.set(0, 0.28, -0.12);
-    poseidonChassis.add(lowerHull, carrierDeck);
-
-    // Recessed Twin Electromagnetic Catapult Tracks & Bow Ski-Jump Ramp
-    [-0.48, 0.48].forEach((tx) => {
-      const track = new THREE.Mesh(
-        new THREE.BoxGeometry(0.14, 0.04, 3.45),
-        mats.darkGraphiteTrim,
-      );
-      track.position.set(tx, 0.42, -0.15);
-      poseidonChassis.add(track);
-    });
-
-    // 12-Cell Dorsal VLS Missile Battery along Centerline Deck
-    for (let r = 0; r < 6; r++) {
-      [-0.22, 0.22].forEach((vx) => {
-        const hatch = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.13, 0.14, 0.06, 12),
-          machinedSteelMat,
-        );
-        hatch.position.set(vx, 0.43, -1.25 + r * 0.46);
-        poseidonChassis.add(hatch);
-      });
-    }
-
-    // Starboard Primary Navigation Bridge Island + Port Sensor/Radar Island
-    [-1.08, 1.08].forEach((ix, idx) => {
-      const island = new THREE.Mesh(
-        new THREE.BoxGeometry(0.42, 0.64, 1.28),
-        poseidonHullMat,
-      );
-      island.position.set(ix, 0.68, -0.15 + idx * 0.25);
-
-      const bridgeWindows = new THREE.Mesh(
-        new THREE.BoxGeometry(0.44, 0.16, 0.55),
-        mats.sapphireCanopy,
-      );
-      bridgeWindows.position.set(ix, 0.82, -0.45 + idx * 0.25);
-      poseidonChassis.add(island, bridgeWindows);
-    });
-
-    // Rotating Carrier Air/Sea Search Radar Array atop Starboard Island
-    poseidonRadar = new THREE.Group();
-    poseidonRadar.position.set(1.08, 1.15, 0.1);
-    const radarDish = new THREE.Mesh(
-      new THREE.BoxGeometry(0.95, 0.18, 0.18),
-      machinedSteelMat,
-    );
-    const radarPedestal = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.1, 0.14, 0.24, 10),
-      navalBronzeMat,
-    );
-    radarPedestal.position.set(0, -0.12, 0);
-    poseidonRadar.add(radarDish, radarPedestal);
-    poseidonChassis.add(poseidonRadar);
-
-    // Lateral Sponsored Drone/Torpedo Launch Bays + Swept Deck Sponsons
-    [-1.68, 1.68].forEach((sx) => {
-      const sponson = new THREE.Mesh(
-        new THREE.BoxGeometry(0.88, 0.32, 2.45),
-        mats.darkGraphiteTrim,
-      );
-      sponson.position.set(sx, 0.04, 0.15);
-      poseidonChassis.add(sponson);
-    });
-
-    // 4 Heavy Shrouded Carrier Vectoring Nozzles across the Wide Transom Stern
-    [-1.26, -0.44, 0.44, 1.26].forEach((x, idx) => {
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        idx === 1 || idx === 2 ? 0.96 : 0.86,
-      );
-      fl.root.position.set(x, 0.02, 1.96);
-      poseidonChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  poseidonChassis.visible = false;
-  group.add(poseidonChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS I: CHARYBDIS-XIII JUGGERNAUT (`charybdis_jugger` — Tier IX)
-  // (Cruciform 4-Keel Hadal Siege Juggernaut with 5 Heat-Stained Nozzles)
-  // ----------------------------------------------------------------------------
-  const charybdisHullMat = mats.titaniumHull.clone();
-  charybdisHullMat.color.setHex(0x3d292e);
-  charybdisHullMat.metalness = 0.88;
-  charybdisHullMat.roughness = 0.34;
-
-  const charybdisChassis = new THREE.Group();
-  {
-    // Central Heavy Reactor Pressure Cylinder
-    const reactorHull = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.68, 0.74, 3.65, 22).rotateX(Math.PI / 2),
-      charybdisHullMat,
-    );
-    reactorHull.position.set(0, 0.04, -0.1);
-    charybdisChassis.add(reactorHull);
-
-    // Armored Spherical Command Dome with Heavy Steel Blast Visor Louvers
-    const bowCupola = new THREE.Mesh(
-      new THREE.SphereGeometry(0.68, 22, 18),
-      machinedSteelMat,
-    );
-    bowCupola.position.set(0, 0.06, -1.92);
-    const visorGlass = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.56, 0.56, 0.22, 18, 1, false, -Math.PI * 0.4, Math.PI * 0.8),
-      mats.sapphireCanopy,
-    );
-    visorGlass.rotation.y = Math.PI;
-    visorGlass.position.set(0, 0.16, -2.12);
-    charybdisChassis.add(bowCupola, visorGlass);
-
-    // 4 Cruciform Armored Pressure Keels (Upper-Port, Upper-Starboard, Lower-Port, Lower-Starboard)
-    [
-      [-1.42, 0.42],
-      [1.42, 0.42],
-      [-1.58, -0.36],
-      [1.58, -0.36],
-    ].forEach(([kx, ky]) => {
-      const keelPod = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.36, 2.55, 12, 18).rotateX(Math.PI / 2),
-        charybdisHullMat,
-      );
-      keelPod.position.set(kx, ky, 0.08);
-
-      // Hydraulic Bow Ramming Shield on each Keel
-      const ramShield = new THREE.Mesh(
-        new THREE.BoxGeometry(0.58, 0.44, 0.26),
-        navalBronzeMat,
-      );
-      ramShield.position.set(kx, ky, -1.52);
-      ramShield.rotation.y = kx < 0 ? 0.24 : -0.24;
-
-      // Connecting Armored Bulkhead Struts & High-Pressure Ballast Flasks
-      const strut = new THREE.Mesh(
-        new THREE.BoxGeometry(1.15, 0.22, 1.45),
-        mats.darkGraphiteTrim,
-      );
-      strut.position.set(kx * 0.52, ky * 0.55, 0.05);
-
-      const flask = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.11, 0.11, 1.45, 10).rotateX(Math.PI / 2),
-        navalBronzeMat,
-      );
-      flask.position.set(kx * 0.78, ky + (ky > 0 ? 0.26 : -0.26), 0.05);
-
-      charybdisChassis.add(keelPod, ramShield, strut, flask);
-    });
-
-    // Dorsal Heavy Crane Arch & Dual 8-Cell Countermeasure Mortars
-    const dorsalArch = new THREE.Mesh(
-      new THREE.TorusGeometry(0.88, 0.075, 10, 22, Math.PI),
-      machinedSteelMat,
-    );
-    dorsalArch.position.set(0, 0.45, 0.35);
-    charybdisChassis.add(dorsalArch);
-
-    // 5 Heat-Stained Variable-Geometry Thruster Nozzles (1 Massive Center + 4 Cruciform Keels)
-    [
-      [0, 0.04, 2.05, 1.18],
-      [-1.42, 0.42, 1.72, 0.78],
-      [1.42, 0.42, 1.72, 0.78],
-      [-1.58, -0.36, 1.72, 0.78],
-      [1.58, -0.36, 1.72, 0.78],
-    ].forEach(([x, y, z, sc]) => {
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        sc,
-      );
-      fl.root.position.set(x, y, z);
-      charybdisChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  charybdisChassis.visible = false;
-  group.add(charybdisChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS J: VALKYRIE-ABYSSAL XIV SUPERSONIC (`valkyrie_supersonic` — Tier X)
-  // (Twin-Fuselage Supercavitating Interceptor with Central Command Pod & Railgun Spine)
-  // ----------------------------------------------------------------------------
-  const valkyrieHullMat = mats.titaniumHull.clone();
-  valkyrieHullMat.color.setHex(0x475569);
-  valkyrieHullMat.metalness = 0.91;
-  valkyrieHullMat.roughness = 0.28;
-
-  const valkyrieChassis = new THREE.Group();
-  {
-    // Twin Parallel Supercavitating Pressure Fuselages (Port & Starboard Booms)
-    const boomPoints = [
-      new THREE.Vector2(0.01, -3.15),
-      new THREE.Vector2(0.12, -2.75),
-      new THREE.Vector2(0.32, -1.85),
-      new THREE.Vector2(0.42, -0.55),
-      new THREE.Vector2(0.42, 1.15),
-      new THREE.Vector2(0.32, 1.85),
-      new THREE.Vector2(0.05, 2.02),
-    ];
-    const boomGeo = new THREE.LatheGeometry(boomPoints, 24);
-    boomGeo.rotateX(Math.PI / 2);
-    boomGeo.scale(0.95, 0.75, 1.0);
-
-    [-0.96, 0.96].forEach((bx) => {
-      const boom = new THREE.Mesh(boomGeo, valkyrieHullMat);
-      boom.position.set(bx, 0.0, 0);
-      boom.castShadow = true;
-      boom.receiveShadow = true;
-
-      // Supercavitating nose cone & pitot sting on each twin fuselage
-      const cavitator = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.08, 0.13, 0.24, 14).rotateX(Math.PI / 2),
-        navalBronzeMat,
-      );
-      cavitator.position.set(bx, 0, -3.18);
-      const sting = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.012, 0.022, 0.55, 8).rotateX(Math.PI / 2),
-        machinedSteelMat,
-      );
-      sting.position.set(bx, 0, -3.48);
-
-      // Twin inward-canted vertical tail fins on each boom
-      const vFin = new THREE.Mesh(
-        new THREE.BoxGeometry(0.065, 0.95, 0.92),
-        valkyrieHullMat,
-      );
-      vFin.position.set(bx, 0.52, 1.28);
-      vFin.rotation.z = bx < 0 ? -0.25 : 0.25;
-
-      valkyrieChassis.add(boom, cavitator, sting, vFin);
-    });
-
-    // Central Armored Command Nacelle + Dorsal Electromagnetic Railgun Spine
-    const centerPod = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.46, 1.95, 14, 20).rotateX(Math.PI / 2),
-      valkyrieHullMat,
-    );
-    centerPod.scale.set(1.15, 0.72, 1.0);
-    centerPod.position.set(0, 0.12, -0.35);
-    valkyrieChassis.add(centerPod);
-
-    const interior = createCockpitInterior(
-      mats.darkGraphiteTrim,
-      anechoicRubberMat,
-      shipTrimMat,
-    );
-    interior.position.set(0, 0.28, -0.82);
-    valkyrieChassis.add(interior);
-
-    const canopyGeo = new THREE.SphereGeometry(
-      0.44,
-      20,
-      14,
-      0,
-      Math.PI * 2,
-      0,
-      Math.PI * 0.52,
-    );
-    canopyGeo.scale(0.82, 0.65, 2.0);
-    const canopy = new THREE.Mesh(canopyGeo, mats.sapphireCanopy);
-    canopy.position.set(0, 0.28, -0.78);
-    canopy.renderOrder = 4;
-    valkyrieChassis.add(canopy);
-
-    // Dorsal Spinal Railgun Barrel & Bronze Induction Clamps
-    const spinalRail = new THREE.Mesh(
-      new THREE.BoxGeometry(0.22, 0.16, 2.65),
-      machinedSteelMat,
-    );
-    spinalRail.position.set(0, 0.48, 0.35);
-    valkyrieChassis.add(spinalRail);
-    for (let c = 0; c < 5; c++) {
-      const clamp = new THREE.Mesh(
-        new THREE.BoxGeometry(0.32, 0.22, 0.1),
-        navalBronzeMat,
-      );
-      clamp.position.set(0, 0.48, -0.65 + c * 0.48);
-      valkyrieChassis.add(clamp);
-    }
-
-    // Wide Gull Hydro-Wing Bridging Both Fuselages & Extending Outboard
-    const crossWing = new THREE.Mesh(
-      new THREE.BoxGeometry(6.65, 0.11, 1.18),
-      valkyrieHullMat,
-    );
-    crossWing.position.set(0, 0.04, 0.22);
-    valkyrieChassis.add(crossWing);
-
-    // 4 Supersonic Variable-Geometry Nozzles (2 per Twin Fuselage)
-    [-1.18, -0.74, 0.74, 1.18].forEach((x) => {
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        0.85,
-      );
-      fl.root.position.set(x, 0.0, 1.95);
-      valkyrieChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  valkyrieChassis.visible = false;
-  group.add(valkyrieChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS K: TITAN-TRENCH XV DREADNOUGHT (`titan_dreadnought` — Tier XI)
-  // (Heavy Naval Battleship Sub-Cruiser with Triple Gun Turrets, 16-Cell VLS & 5 Nozzles)
-  // ----------------------------------------------------------------------------
-  const titanHullMat = mats.titaniumHull.clone();
-  titanHullMat.color.setHex(0x36312a);
-  titanHullMat.metalness = 0.88;
-  titanHullMat.roughness = 0.34;
-
-  const titanChassis = new THREE.Group();
-  let titanRadar = new THREE.Group();
-  {
-    // Massive Multi-Tiered Battleship Pressure Hull
-    const dreadPoints = [
-      new THREE.Vector2(0.01, -3.35),
-      new THREE.Vector2(0.36, -3.05),
-      new THREE.Vector2(0.74, -2.35),
-      new THREE.Vector2(0.95, -1.25),
-      new THREE.Vector2(0.98, 0.65),
-      new THREE.Vector2(0.82, 1.68),
-      new THREE.Vector2(0.45, 2.15),
-      new THREE.Vector2(0.05, 2.28),
-    ];
-    const dreadGeo = new THREE.LatheGeometry(dreadPoints, 30);
-    dreadGeo.rotateX(Math.PI / 2);
-    dreadGeo.scale(1.26, 0.78, 1.0);
-    const dreadHull = new THREE.Mesh(dreadGeo, titanHullMat);
-    dreadHull.castShadow = true;
-    dreadHull.receiveShadow = true;
-    titanChassis.add(dreadHull);
-
-    // Spaced Explosive Reactive Armor (ERA) Torpedo Belts along Both Sides
-    [-1.28, 1.28].forEach((sx) => {
-      const belt = new THREE.Mesh(
-        new THREE.BoxGeometry(0.38, 0.44, 3.25),
-        mats.darkGraphiteTrim,
-      );
-      belt.position.set(sx, -0.06, -0.1);
-      titanChassis.add(belt);
-
-      for (let b = 0; b < 6; b++) {
-        const eraPlate = new THREE.Mesh(
-          new THREE.BoxGeometry(0.14, 0.36, 0.46),
-          navalBronzeMat,
-        );
-        eraPlate.position.set(
-          sx + (sx < 0 ? -0.22 : 0.22),
-          -0.06,
-          -1.35 + b * 0.52,
-        );
-        titanChassis.add(eraPlate);
-      }
-    });
-
-    // Raised Armored Superstructure Deck + Citadel Conning Tower
-    const deckSuper = new THREE.Mesh(
-      new THREE.BoxGeometry(1.42, 0.34, 3.35),
-      titanHullMat,
-    );
-    deckSuper.position.set(0, 0.56, -0.15);
-
-    const citadelBridge = new THREE.Mesh(
-      new THREE.BoxGeometry(0.84, 0.68, 1.05),
-      titanHullMat,
-    );
-    citadelBridge.position.set(0, 0.96, -0.15);
-
-    const citadelVisor = new THREE.Mesh(
-      new THREE.BoxGeometry(0.88, 0.18, 0.45),
-      mats.sapphireCanopy,
-    );
-    citadelVisor.position.set(0, 1.12, -0.52);
-    titanChassis.add(deckSuper, citadelBridge, citadelVisor);
-
-    // Rotating Fire-Control Radar Mast atop Citadel
-    titanRadar = new THREE.Group();
-    titanRadar.position.set(0, 1.44, -0.15);
-    const fcBar = new THREE.Mesh(
-      new THREE.BoxGeometry(1.18, 0.16, 0.22),
-      machinedSteelMat,
-    );
-    const fcHub = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.14, 0.18, 0.26, 12),
-      navalBronzeMat,
-    );
-    titanRadar.add(fcBar, fcHub);
-    titanChassis.add(titanRadar);
-
-    // Triple Twin-Barrel Naval Battleship Gun Turrets (2 Forward Superfiring + 1 Aft)
-    [
-      [0, 0.74, -1.95, 0],
-      [0, 0.88, -1.18, 0],
-      [0, 0.78, 1.02, Math.PI],
-    ].forEach(([tx, ty, tz, rotY]) => {
-      const tGroup = new THREE.Group();
-      tGroup.position.set(tx, ty, tz);
-      tGroup.rotation.y = rotY;
-
-      const house = new THREE.Mesh(
-        new THREE.BoxGeometry(0.62, 0.26, 0.68),
-        machinedSteelMat,
-      );
-      [-0.15, 0.15].forEach((bx) => {
-        const barrel = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.045, 0.06, 0.98, 10).rotateX(Math.PI / 2),
-          heatStainedNozzleMat,
-        );
-        barrel.position.set(bx, 0.04, -0.62);
-        tGroup.add(barrel);
-      });
-      tGroup.add(house);
-      titanChassis.add(tGroup);
-    });
-
-    // Heavy Swept Battleship Hydro-Wings
-    const dreadWings = new THREE.Mesh(
-      new THREE.BoxGeometry(6.35, 0.16, 1.28),
-      titanHullMat,
-    );
-    dreadWings.position.set(0, -0.12, 0.35);
-    titanChassis.add(dreadWings);
-
-    // 5 Shrouded Dreadnought Variable-Geometry Nozzles
-    [
-      [-1.52, -0.08, 1.85, 0.82],
-      [-0.78, -0.02, 2.02, 0.92],
-      [0, 0.02, 2.15, 1.12],
-      [0.78, -0.02, 2.02, 0.92],
-      [1.52, -0.08, 1.85, 0.82],
-    ].forEach(([x, y, z, sc]) => {
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        sc,
-      );
-      fl.root.position.set(x, y, z);
-      titanChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  titanChassis.visible = false;
-  group.add(titanChassis);
-
-  // ----------------------------------------------------------------------------
-  // CHASSIS L: SOVEREIGN-OMEGA XVI LEVIATHAN (`sovereign_leviathan` — Tier XII)
-  // (Apex Hadal Flagship Super-Dreadnought with Tri-Wing Hull, Dual Radars & 6 Nozzles)
-  // ----------------------------------------------------------------------------
-  const sovereignHullMat = mats.titaniumHull.clone();
-  sovereignHullMat.color.setHex(0x2b2620);
-  sovereignHullMat.metalness = 0.92;
-  sovereignHullMat.roughness = 0.28;
-
-  const sovereignChassis = new THREE.Group();
-  let sovereignRadar1 = new THREE.Group();
-  let sovereignRadar2 = new THREE.Group();
-  {
-    // Central Sovereign Pressure Spine + Twin Forward Supercavitating Armored Prows
-    const mainHull = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.84, 3.05, 18, 28).rotateX(Math.PI / 2),
-      sovereignHullMat,
-    );
-    mainHull.scale.set(1.28, 0.74, 1.0);
-    mainHull.position.set(0, 0.04, -0.1);
-    sovereignChassis.add(mainHull);
-
-    // Twin Forward Armored Prow Spears + Central Heavy Siege Hydro-Cannon Muzzle
-    [-0.58, 0.58].forEach((px) => {
-      const prowSpear = new THREE.Mesh(
-        new THREE.ConeGeometry(0.34, 1.65, 8).rotateX(-Math.PI / 2),
-        navalBronzeMat,
-      );
-      prowSpear.scale.set(0.95, 0.65, 1.0);
-      prowSpear.position.set(px, -0.02, -2.75);
-      sovereignChassis.add(prowSpear);
-    });
-
-    const spinalCannon = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.16, 0.22, 1.45, 16).rotateX(Math.PI / 2),
-      heatStainedNozzleMat,
-    );
-    spinalCannon.position.set(0, -0.04, -2.65);
-    sovereignChassis.add(spinalCannon);
-
-    // Swept Tri-Wing Configuration (Main Delta Hydro-Wing + Upper Forward-Swept Strakes + Ventral Foil)
-    const wingShape = new THREE.Shape();
-    wingShape.moveTo(0.85, -1.25);
-    wingShape.lineTo(2.15, -0.45);
-    wingShape.lineTo(3.68, 0.65);
-    wingShape.lineTo(3.45, 1.45);
-    wingShape.lineTo(1.75, 1.15);
-    wingShape.lineTo(0.85, 1.55);
-    wingShape.closePath();
-
-    const mainWingGeo = new THREE.ExtrudeGeometry(wingShape, {
-      steps: 1,
-      depth: 0.12,
-      bevelEnabled: true,
-      bevelThickness: 0.035,
-      bevelSize: 0.035,
-      bevelSegments: 2,
-    });
-    mainWingGeo.rotateX(Math.PI / 2);
-
-    const rMainWing = new THREE.Mesh(mainWingGeo, sovereignHullMat);
-    rMainWing.position.set(0, 0.02, 0);
-    const lMainWing = new THREE.Mesh(mainWingGeo, sovereignHullMat);
-    lMainWing.scale.set(-1, 1, 1);
-    lMainWing.position.set(0, 0.02, 0);
-    sovereignChassis.add(rMainWing, lMainWing);
-
-    // Upper Anhedral Strike Foils & Gilded Naval Bronze Reactive Armor Chevrons
-    [-1, 1].forEach((dir) => {
-      const upperFoil = new THREE.Mesh(
-        new THREE.BoxGeometry(2.45, 0.08, 0.68),
-        navalBronzeMat,
-      );
-      upperFoil.position.set(dir * 1.85, 0.36, 0.35);
-      upperFoil.rotation.z = dir * 0.18;
-      upperFoil.rotation.y = dir * -0.22;
-
-      const wingtipPod = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.11, 0.11, 1.85, 12).rotateX(Math.PI / 2),
-        machinedSteelMat,
-      );
-      wingtipPod.position.set(dir * 3.58, 0.02, 0.85);
-
-      const twinTail = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 1.18, 1.05),
-        sovereignHullMat,
-      );
-      twinTail.position.set(dir * 1.15, 0.64, 1.38);
-      twinTail.rotation.z = dir * -0.26;
-
-      sovereignChassis.add(upperFoil, wingtipPod, twinTail);
-    });
-
-    // Armored Command Bridge Citadel + Framed Quartz Command Canopy + Twin Dorsal Rail-Turrets
-    const commandCitadel = new THREE.Mesh(
-      new THREE.BoxGeometry(1.12, 0.48, 2.25),
-      sovereignHullMat,
-    );
-    commandCitadel.position.set(0, 0.56, -0.35);
-
-    const commandCanopy = new THREE.Mesh(
-      new THREE.SphereGeometry(0.52, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.5),
-      mats.sapphireCanopy,
-    );
-    commandCanopy.scale.set(0.95, 0.62, 1.95);
-    commandCanopy.position.set(0, 0.68, -0.95);
-    commandCanopy.renderOrder = 4;
-    sovereignChassis.add(commandCitadel, commandCanopy);
-
-    // Open VLS Silo Bank with Exposed Bronze-Gold Ballistic Warheads
-    for (let s = 0; s < 4; s++) {
-      [-0.36, 0.36].forEach((sx) => {
-        const siloCollar = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.15, 0.16, 0.1, 12),
-          machinedSteelMat,
-        );
-        siloCollar.position.set(sx, 0.82, -0.15 + s * 0.38);
-        const warhead = new THREE.Mesh(
-          new THREE.ConeGeometry(0.11, 0.24, 12),
-          navalBronzeMat,
-        );
-        warhead.position.set(sx, 0.88, -0.15 + s * 0.38);
-        sovereignChassis.add(siloCollar, warhead);
-      });
-    }
-
-    // Dual Counter-Rotating Phased-Array Radar & Sonar Domes atop the Command Citadel
-    sovereignRadar1 = new THREE.Group();
-    sovereignRadar1.position.set(0, 1.08, 0.15);
-    const radome1 = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.58, 0.58, 0.12, 20),
-      navalBronzeMat,
-    );
-    const radomeCross1 = new THREE.Mesh(
-      new THREE.BoxGeometry(1.36, 0.08, 0.22),
-      machinedSteelMat,
-    );
-    sovereignRadar1.add(radome1, radomeCross1);
-
-    sovereignRadar2 = new THREE.Group();
-    sovereignRadar2.position.set(0, 1.26, 0.15);
-    const radomeCross2 = new THREE.Mesh(
-      new THREE.BoxGeometry(0.96, 0.1, 0.18),
-      mats.darkGraphiteTrim,
-    );
-    sovereignRadar2.add(radomeCross2);
-    sovereignChassis.add(sovereignRadar1, sovereignRadar2);
-
-    // 6-Nozzle Variable-Geometry Afterburner Bank across the Sovereign Stern
-    [
-      [-1.82, -0.04, 1.78, 0.78],
-      [-1.12, 0.0, 1.94, 0.9],
-      [-0.38, 0.04, 2.08, 1.05],
-      [0.38, 0.04, 2.08, 1.05],
-      [1.12, 0.0, 1.94, 0.9],
-      [1.82, -0.04, 1.78, 0.78],
-    ].forEach(([x, y, z, sc]) => {
-      const fl = createRealisticThrusterAssembly(
-        fireWhiteCoreMat,
-        fireThermalMidMat,
-        fireOuterPlasmaMat,
-        heatStainedNozzleMat,
-        machinedSteelMat,
-        sc,
-      );
-      fl.root.position.set(x, y, z);
-      sovereignChassis.add(fl.root);
-      thrusterAssemblies.push(fl);
-    });
-  }
-  sovereignChassis.visible = false;
-  group.add(sovereignChassis);
+  const shipBuilds: ShipChassisBuild[] = [
+    createVanguardIXChassis(palette),
+    createMaelstromXIIChassis(palette),
+    createNautilusSpectreVIIChassis(palette),
+    createBathysBastionIVChassis(palette),
+    createAbyssalTalonChassis(palette),
+    createTempestCorsairChassis(palette),
+    createRiftMantaChassis(palette),
+    createLeviathanBreakerChassis(palette),
+    createTrenchWardenChassis(palette),
+    createKrakenReaperChassis(palette),
+    createAbyssalSovereignChassis(palette),
+    createPelagicAscendantChassis(palette),
+  ];
+
+  shipBuilds.forEach((build, index) => {
+    build.root.visible = index === 0;
+    group.add(build.root);
+    thrusterAssemblies.push(...build.thrusters);
+  });
 
   // ============================================================================
-  // 2. REALISTIC MECHANICAL PRIMARY WEAPON TURRET RIGS (With Barrel Recoil)
+  // 2. PER-SHIP MULTI-MOUNT PRIMARY WEAPON TURRET PODS (Up to 4 Hardpoints)
   // ============================================================================
   const primaryWeaponsRoot = new THREE.Group();
   group.add(primaryWeaponsRoot);
 
-  // 2A. Cavitation Cannons (`cavitation_cannons`) - Twin 30mm Naval Autocannons with Perforated Cooling Jackets
-  const priCavitationGroup = new THREE.Group();
-  [-1.92, 1.92].forEach((sideX) => {
-    // Hardpoint pylon & armored gunreceiver housing
+  interface PrimaryMountPod {
+    root: THREE.Group;
+    cavitationModel: THREE.Group;
+    lanceModel: THREE.Group;
+    scatterModel: THREE.Group;
+    muzzleFlash: THREE.Group;
+    rotaryCluster: THREE.Group;
+  }
+
+  const primaryMountPods: PrimaryMountPod[] = [];
+  const muzzleFlashGroups: THREE.Group[] = [];
+
+  for (let mIdx = 0; mIdx < 4; mIdx++) {
+    const podRoot = new THREE.Group();
+
+    // 2A. Cavitation Cannons (`cavitation_cannons`)
+    const cavModel = new THREE.Group();
     const receiver = new THREE.Mesh(
-      new THREE.BoxGeometry(0.32, 0.26, 0.78),
+      new THREE.BoxGeometry(0.28, 0.22, 0.68),
       mats.darkGraphiteTrim,
     );
-    receiver.position.set(sideX, -0.06, 0.32);
-
-    // Brass ammunition feed chute & hydraulic recoil damper cylinder
+    receiver.position.set(0, 0, 0.26);
     const ammoChute = new THREE.Mesh(
-      new THREE.BoxGeometry(0.18, 0.14, 0.42),
+      new THREE.BoxGeometry(0.16, 0.12, 0.36),
       navalBronzeMat,
     );
-    ammoChute.position.set(sideX * 0.92, -0.08, 0.35);
-
-    const recoilSpring = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.055, 0.055, 0.65, 10).rotateX(Math.PI / 2),
-      machinedSteelMat,
-    );
-    recoilSpring.position.set(sideX, 0.05, -0.15);
-
-    // Heavy rifled barrel + perforated thermal cooling shroud + slotted muzzle brake
+    ammoChute.position.set(0, -0.05, 0.28);
     const barrel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.055, 0.075, 1.72, 12).rotateX(Math.PI / 2),
+      new THREE.CylinderGeometry(0.05, 0.068, 1.48, 12).rotateX(Math.PI / 2),
       machinedSteelMat,
     );
-    barrel.position.set(sideX, -0.06, -0.42);
-
+    barrel.position.set(0, 0, -0.38);
     const coolingJacket = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.105, 0.105, 0.92, 12).rotateX(Math.PI / 2),
+      new THREE.CylinderGeometry(0.095, 0.095, 0.82, 12).rotateX(Math.PI / 2),
       heatStainedNozzleMat,
     );
-    coolingJacket.position.set(sideX, -0.06, -0.18);
-
+    coolingJacket.position.set(0, 0, -0.15);
     const muzzleBrake = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.095, 0.075, 0.26, 12).rotateX(Math.PI / 2),
-      heatStainedNozzleMat,
+      new THREE.CylinderGeometry(0.088, 0.068, 0.24, 12).rotateX(Math.PI / 2),
+      shipTrimMat,
     );
-    muzzleBrake.position.set(sideX, -0.06, -1.28);
+    muzzleBrake.position.set(0, 0, -1.12);
+    cavModel.add(receiver, ammoChute, barrel, coolingJacket, muzzleBrake);
+    podRoot.add(cavModel);
 
-    priCavitationGroup.add(
-      receiver,
-      ammoChute,
-      recoilSpring,
-      barrel,
-      coolingJacket,
-      muzzleBrake,
-    );
-  });
-  primaryWeaponsRoot.add(priCavitationGroup);
-
-  // 2B. Focused Bio-Lance (`focused_bio_lance`) - Twin Heavy Naval Electromagnetic Rail-Cannons
-  const priBioLanceGroup = new THREE.Group();
-  [-1.92, 1.92].forEach((sideX) => {
+    // 2B. Thermal Lance Array (`focused_bio_lance`)
+    const lanceModel = new THREE.Group();
     const breechBlock = new THREE.Mesh(
-      new THREE.BoxGeometry(0.36, 0.32, 0.82),
+      new THREE.BoxGeometry(0.32, 0.28, 0.74),
       mats.darkGraphiteTrim,
     );
-    breechBlock.position.set(sideX, -0.05, 0.38);
-
+    breechBlock.position.set(0, 0, 0.32);
     const railUpper = new THREE.Mesh(
-      new THREE.BoxGeometry(0.11, 0.075, 1.98),
+      new THREE.BoxGeometry(0.095, 0.065, 1.72),
       machinedSteelMat,
     );
-    railUpper.position.set(sideX, 0.03, -0.38);
-
+    railUpper.position.set(0, 0.07, -0.34);
     const railLower = new THREE.Mesh(
-      new THREE.BoxGeometry(0.11, 0.075, 1.98),
+      new THREE.BoxGeometry(0.095, 0.065, 1.72),
       machinedSteelMat,
     );
-    railLower.position.set(sideX, -0.13, -0.38);
-
-    const copperCore = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.045, 0.045, 1.85, 10).rotateX(Math.PI / 2),
-      navalBronzeMat,
+    railLower.position.set(0, -0.07, -0.34);
+    const plasmaConduit = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.042, 0.042, 1.65, 10).rotateX(Math.PI / 2),
+      mats.biolumeAmber,
     );
-    copperCore.position.set(sideX, -0.05, -0.35);
-
-    // Machined steel & bronze induction clamp collars along the barrel
-    for (let c = 0; c < 4; c++) {
+    plasmaConduit.position.set(0, 0, -0.32);
+    for (let c = 0; c < 3; c++) {
       const clamp = new THREE.Mesh(
-        new THREE.BoxGeometry(0.22, 0.24, 0.1),
-        heatStainedNozzleMat,
+        new THREE.BoxGeometry(0.2, 0.22, 0.09),
+        navalBronzeMat,
       );
-      clamp.position.set(sideX, -0.05, 0.12 - c * 0.42);
-      priBioLanceGroup.add(clamp);
+      clamp.position.set(0, 0, 0.06 - c * 0.42);
+      lanceModel.add(clamp);
     }
+    lanceModel.add(breechBlock, railUpper, railLower, plasmaConduit);
+    lanceModel.visible = false;
+    podRoot.add(lanceModel);
 
-    priBioLanceGroup.add(breechBlock, railUpper, railLower, copperCore);
-  });
-  priBioLanceGroup.visible = false;
-  primaryWeaponsRoot.add(priBioLanceGroup);
-
-  // 2C. Burst-Pulse Quad Repeater (`burst_pulse_repeater`) - Twin 6-Barrel Phalanx CIWS Rotary Gatling Pods
-  const priBurstRepeaterGroup = new THREE.Group();
-  [-1.92, 1.92].forEach((sideX) => {
+    // 2C. Arc Shard Scatter (`burst_pulse_repeater`)
+    const scatterModel = new THREE.Group();
     const ammoDrum = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.24, 0.24, 0.72, 16).rotateX(Math.PI / 2),
+      new THREE.CylinderGeometry(0.21, 0.21, 0.64, 14).rotateX(Math.PI / 2),
       mats.darkGraphiteTrim,
     );
-    ammoDrum.position.set(sideX, -0.05, 0.18);
-
-    const feedBelt = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.25, 0.25, 0.14, 16).rotateX(Math.PI / 2),
-      navalBronzeMat,
+    ammoDrum.position.set(0, 0, 0.16);
+    const crystalRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.18, 0.028, 8, 14),
+      mats.biolumeEmerald,
     );
-    feedBelt.position.set(sideX, -0.05, 0.18);
-    priBurstRepeaterGroup.add(ammoDrum, feedBelt);
+    crystalRing.position.set(0, 0, -0.12);
+    scatterModel.add(ammoDrum, crystalRing);
 
-    // 6 rotary stainless steel Gatling barrels arranged in a circle
+    const rotaryCluster = new THREE.Group();
+    rotaryCluster.position.set(0, 0, -0.46);
     for (let b = 0; b < 6; b++) {
       const ang = (b / 6) * Math.PI * 2;
-      const ox = Math.cos(ang) * 0.085;
-      const oy = Math.sin(ang) * 0.085;
       const miniBarrel = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.026, 0.026, 1.52, 8).rotateX(Math.PI / 2),
+        new THREE.CylinderGeometry(0.024, 0.024, 1.28, 8).rotateX(Math.PI / 2),
         machinedSteelMat,
       );
-      miniBarrel.position.set(sideX + ox, -0.05 + oy, -0.52);
-      priBurstRepeaterGroup.add(miniBarrel);
+      miniBarrel.position.set(Math.cos(ang) * 0.075, Math.sin(ang) * 0.075, 0);
+      rotaryCluster.add(miniBarrel);
     }
+    scatterModel.add(rotaryCluster);
+    scatterModel.visible = false;
+    podRoot.add(scatterModel);
 
-    // Dual heat-stained barrel spacer clamps
-    [-0.35, -1.08].forEach((cz) => {
-      const clampRing = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.14, 0.14, 0.09, 14).rotateX(Math.PI / 2),
-        heatStainedNozzleMat,
-      );
-      clampRing.position.set(sideX, -0.05, cz);
-      priBurstRepeaterGroup.add(clampRing);
-    });
-  });
-  priBurstRepeaterGroup.visible = false;
-  primaryWeaponsRoot.add(priBurstRepeaterGroup);
-
-  // 2D. Realistic 3D Muzzle Flash Starbursts + Cavitation Shockwave Rings
-  const muzzleFlashGroups: THREE.Group[] = [];
-  [-1.92, 1.92].forEach((sideX) => {
+    // 2D. Muzzle Cavitation Burst & Hydro-Shock Ring
     const mf = new THREE.Group();
-    mf.position.set(sideX, -0.05, -1.42);
-
+    mf.position.set(0, 0, -1.25);
     const coreBall = new THREE.Mesh(
-      new THREE.SphereGeometry(0.22, 10, 10),
+      new THREE.SphereGeometry(0.2, 10, 10),
       muzzleFlashCoreMat,
     );
     const flameCone = new THREE.Mesh(
-      new THREE.ConeGeometry(0.28, 0.95, 10).rotateX(-Math.PI / 2),
+      new THREE.ConeGeometry(0.24, 0.85, 10).rotateX(-Math.PI / 2),
       muzzleFlashFireMat,
     );
-    flameCone.position.set(0, 0, -0.38);
-
-    const starPlaneGeo = new THREE.PlaneGeometry(0.85, 0.85);
-    const star1 = new THREE.Mesh(starPlaneGeo, muzzleFlashFireMat);
-    const star2 = new THREE.Mesh(starPlaneGeo, muzzleFlashCoreMat);
-    star2.rotation.z = Math.PI / 4;
-
+    flameCone.position.set(0, 0, -0.34);
     const shockRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.32, 0.035, 8, 20),
+      new THREE.TorusGeometry(0.28, 0.03, 8, 18),
       muzzleFlashCoreMat,
     );
-
-    mf.add(coreBall, flameCone, star1, star2, shockRing);
+    mf.add(coreBall, flameCone, shockRing);
     mf.visible = false;
-    primaryWeaponsRoot.add(mf);
+    podRoot.add(mf);
     muzzleFlashGroups.push(mf);
-  });
+
+    primaryWeaponsRoot.add(podRoot);
+    primaryMountPods.push({
+      root: podRoot,
+      cavitationModel: cavModel,
+      lanceModel,
+      scatterModel,
+      muzzleFlash: mf,
+      rotaryCluster,
+    });
+  }
 
   // ============================================================================
-  // 3. REALISTIC NAVAL TORPEDO & MISSILE ORDNANCE PODS (Under-Wing / Sponsons)
+  // 3. PER-SHIP SECONDARY TORPEDO & SWARM ORDNANCE PODS
   // ============================================================================
   const secondaryOrdnanceRoot = new THREE.Group();
   group.add(secondaryOrdnanceRoot);
 
-  // 3A. Sonic Homing Torpedoes (`sonic_torpedoes`) - Triple Mk-54 Naval Torpedo Launch Tubes
+  // 3A. Sonic Torpedoes (`sonic_torpedoes`)
   const secSonicPodsGroup = new THREE.Group();
   [-1.32, 1.32].forEach((sideX) => {
     const pylon = new THREE.Mesh(
@@ -3277,7 +976,7 @@ export function createVanguardShip(mats: MaterialBank): {
 
       const warhead = new THREE.Mesh(
         new THREE.SphereGeometry(0.088, 12, 10),
-        navalBronzeMat,
+        shipTrimMat,
       );
       warhead.position.set(sideX + ox, -0.28 + oy, -0.52);
 
@@ -3286,7 +985,7 @@ export function createVanguardShip(mats: MaterialBank): {
   });
   secondaryOrdnanceRoot.add(secSonicPodsGroup);
 
-  // 3B. Heavy Breach Torpedo (`heavy_breach_torpedo`) - Mk-48 ADCAP Heavyweight Wire-Guided Torpedoes
+  // 3B. EMP Depth Seekers (`heavy_breach_torpedo`)
   const secHeavyBreachGroup = new THREE.Group();
   [-1.35, 1.35].forEach((sideX) => {
     const pylon = new THREE.Mesh(
@@ -3301,12 +1000,11 @@ export function createVanguardShip(mats: MaterialBank): {
     );
     torpBody.position.set(sideX, -0.32, 0.05);
 
-    // Brass tactical warhead band & blunt acoustic homing nose
-    const warheadBand = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.173, 0.173, 0.22, 16).rotateX(Math.PI / 2),
-      navalBronzeMat,
+    const empCoilBand = new THREE.Mesh(
+      new THREE.TorusGeometry(0.18, 0.028, 8, 16),
+      mats.biolumeCyan,
     );
-    warheadBand.position.set(sideX, -0.32, -0.58);
+    empCoilBand.position.set(sideX, -0.32, -0.48);
 
     const noseDome = new THREE.Mesh(
       new THREE.SphereGeometry(0.17, 14, 12),
@@ -3315,7 +1013,6 @@ export function createVanguardShip(mats: MaterialBank): {
     noseDome.scale.set(1, 1, 1.35);
     noseDome.position.set(sideX, -0.32, -0.76);
 
-    // Shrouded pump-jet tail ring & cruciform fins
     const tailShroud = new THREE.Mesh(
       new THREE.CylinderGeometry(0.19, 0.16, 0.28, 14).rotateX(Math.PI / 2),
       machinedSteelMat,
@@ -3325,7 +1022,7 @@ export function createVanguardShip(mats: MaterialBank): {
     secHeavyBreachGroup.add(
       pylon,
       torpBody,
-      warheadBand,
+      empCoilBand,
       noseDome,
       tailShroud,
     );
@@ -3333,7 +1030,7 @@ export function createVanguardShip(mats: MaterialBank): {
   secHeavyBreachGroup.visible = false;
   secondaryOrdnanceRoot.add(secHeavyBreachGroup);
 
-  // 3C. Hexa-Swarm Rack (`hexa_swarm_rack`) - 6-Cell Armored Naval Box Missile Launchers
+  // 3C. Hadal Swarm Pods (`hexa_swarm_rack`)
   const secHexaSwarmGroup = new THREE.Group();
   [-1.35, 1.35].forEach((sideX) => {
     const rackBox = new THREE.Mesh(
@@ -3356,7 +1053,7 @@ export function createVanguardShip(mats: MaterialBank): {
         );
         const missileTip = new THREE.Mesh(
           new THREE.ConeGeometry(0.05, 0.18, 10).rotateX(-Math.PI / 2),
-          navalBronzeMat,
+          mats.biolumeEmerald,
         );
         missileTip.position.set(
           sideX + (c - 1) * 0.15,
@@ -3441,12 +1138,12 @@ export function createVanguardShip(mats: MaterialBank): {
     modThrusterCoilGroup.add(auxPod);
 
     const auxFlame = createRealisticThrusterAssembly(
-      fireWhiteCoreMat,
-      fireThermalMidMat,
-      fireOuterPlasmaMat,
       heatStainedNozzleMat,
       machinedSteelMat,
       0.56,
+      0x38bdf8,
+      0x06b6d4,
+      0x7dd3fc,
     );
     auxFlame.root.position.set(sideX, 0.06, 1.68);
     modThrusterCoilGroup.add(auxFlame.root);
@@ -3526,7 +1223,6 @@ export function createVanguardShip(mats: MaterialBank): {
   // 4.9 Level & Upgrade Tier Evolution Armor (Mk.II & Mk.III Naval Prestige Hardware)
   const tierMk2EvolutionGroup = new THREE.Group();
   {
-    // Wingtip Titanium Hydrodynamic Strakes + Dorsal Twin Whip Antennae
     [-2.95, 2.95].forEach((sideX) => {
       const strake = new THREE.Mesh(
         new THREE.BoxGeometry(0.06, 0.44, 1.25),
@@ -3547,7 +1243,6 @@ export function createVanguardShip(mats: MaterialBank): {
 
   const tierMk3EvolutionGroup = new THREE.Group();
   {
-    // Mk.III Heavy Stern Pump-Jet Stator Shroud Ring & Forward Bolted Tungsten Armor Chevrons
     const statorShroud = new THREE.Mesh(
       new THREE.CylinderGeometry(0.92, 0.98, 0.34, 20, 1, true).rotateX(
         Math.PI / 2,
@@ -3579,8 +1274,8 @@ export function createVanguardShip(mats: MaterialBank): {
   const thrusterLeft = thrusterAssemblies[0].outerPlume;
   const thrusterRight = thrusterAssemblies[1].outerPlume;
 
-  // Dynamic Stern Afterburner Light (casts real flickering orange-amber firelight onto nozzles & rear hull)
-  const afterburnerLight = new THREE.PointLight(0xff7711, 2.2, 10.5, 1.6);
+  // Dynamic Stern Cavitation Reactor Light (casts bioluminescent water-plasma glow onto nozzles)
+  const afterburnerLight = new THREE.PointLight(0x38bdf8, 2.2, 10.5, 1.6);
   afterburnerLight.position.set(0, 0.05, 2.45);
   group.add(afterburnerLight);
 
@@ -3596,10 +1291,60 @@ export function createVanguardShip(mats: MaterialBank): {
   const shieldSphere = new THREE.Mesh(shieldGeo, shieldMat);
   group.add(shieldSphere);
 
-  // Internal state for weapon recoil & muzzle flash timers
+  // Mythic & Apex Prestige Reactor Halo (Visible for Tiers 8-12 in Hangar & Flight)
+  const prestigeHaloGroup = new THREE.Group();
+  prestigeHaloGroup.position.set(0, 0.18, 0.15);
+  const haloOuterMat = new THREE.MeshBasicMaterial({
+    color: 0xfbbf24,
+    transparent: true,
+    opacity: 0.42,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const haloInnerMat = new THREE.MeshBasicMaterial({
+    color: 0x22d3ee,
+    transparent: true,
+    opacity: 0.52,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const prestigeOuterRing = new THREE.Mesh(
+    new THREE.TorusGeometry(2.38, 0.022, 10, 48).rotateX(Math.PI / 2),
+    haloOuterMat,
+  );
+  const prestigeInnerRing = new THREE.Mesh(
+    new THREE.TorusGeometry(1.72, 0.018, 10, 36).rotateX(Math.PI / 2.3),
+    haloInnerMat,
+  );
+  for (let n = 0; n < 4; n++) {
+    const ang = (n / 4) * Math.PI * 2;
+    const node = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.065, 0),
+      haloOuterMat,
+    );
+    node.position.set(Math.cos(ang) * 2.38, 0, Math.sin(ang) * 2.38);
+    prestigeOuterRing.add(node);
+  }
+  prestigeHaloGroup.add(prestigeOuterRing, prestigeInnerRing);
+  prestigeHaloGroup.visible = false;
+  group.add(prestigeHaloGroup);
+
+  // Cached muzzle offset vectors (reused with zero per-frame allocations)
+  let activePrimaryMuzzles: THREE.Vector3[] = [
+    new THREE.Vector3(-0.82, -0.06, -2.2),
+    new THREE.Vector3(0.82, -0.06, -2.2),
+  ];
+  let activeSecondaryMuzzles: THREE.Vector3[] = [
+    new THREE.Vector3(-1.18, -0.22, -0.45),
+    new THREE.Vector3(1.18, -0.22, -0.45),
+  ];
+
+  // Internal state for weapon recoil, muzzle flash timers & active ability visuals
   let weaponRecoilOffset = 0;
   let muzzleFlashTimer = 0;
   let smoothThrottle = 1.0;
+  let activeAbilityVisual = false;
+  let currentBuild: ShipChassisBuild = shipBuilds[0];
   let currentLoadoutState: ShipLoadoutVisualConfig = {
     shipId: 'vanguard_interceptor',
     trimHex: 0x06b6d4,
@@ -3631,51 +1376,63 @@ export function createVanguardShip(mats: MaterialBank): {
       trimHex,
     };
 
-    // 1. Toggle all 12 completely distinct realistic naval ship chassis
-    interceptorChassis.visible = shipId === 'vanguard_interceptor';
-    barracudaChassis.visible = shipId === 'barracuda_skimmer';
-    assaultChassis.visible = shipId === 'leviathan_assault';
-    guardianChassis.visible = shipId === 'aegis_guardian';
-    tacticalChassis.visible = shipId === 'echo_tactical';
-    seawolfChassis.visible = shipId === 'seawolf_hunter';
-    krakenChassis.visible = shipId === 'kraken_siege';
-    poseidonChassis.visible = shipId === 'poseidon_carrier';
-    charybdisChassis.visible = shipId === 'charybdis_jugger';
-    valkyrieChassis.visible = shipId === 'valkyrie_supersonic';
-    titanChassis.visible = shipId === 'titan_dreadnought';
-    sovereignChassis.visible = shipId === 'sovereign_leviathan';
+    // 1. Toggle active ship chassis among all 12 completely distinct designs
+    let matchedBuild = shipBuilds[0];
+    shipBuilds.forEach((b) => {
+      const active = b.id === shipId;
+      b.root.visible = active;
+      if (active) matchedBuild = b;
+    });
+    currentBuild = matchedBuild;
 
-    // Adjust weapon hardpoint width slightly per chassis beam/wingspan
-    const wingSpanScale =
-      shipId === 'sovereign_leviathan'
-        ? 1.32
-        : shipId === 'titan_dreadnought' || shipId === 'valkyrie_supersonic'
-          ? 1.24
-          : shipId === 'kraken_siege' || shipId === 'poseidon_carrier'
-            ? 1.22
-            : shipId === 'aegis_guardian' || shipId === 'charybdis_jugger'
-              ? 1.18
-              : shipId === 'leviathan_assault' || shipId === 'seawolf_hunter'
-                ? 1.12
-                : shipId === 'echo_tactical' || shipId === 'barracuda_skimmer'
-                  ? 1.06
-                  : 1.0;
-    primaryWeaponsRoot.scale.set(wingSpanScale, 1, 1);
-    secondaryOrdnanceRoot.scale.set(wingSpanScale, 1, 1);
+    // 2. Apply per-ship propulsion shader colors & reactor light color
+    const shipDef = SHIP_CATALOG.find((s) => s.id === shipId) || SHIP_CATALOG[0];
+    applyPropulsionConfigToThrusters(
+      matchedBuild.thrusters,
+      shipDef.propulsionVfxConfig,
+      trimHex,
+    );
+    afterburnerLight.color.setHex(shipDef.propulsionVfxConfig.primaryColorHex);
 
-    // 2. Toggle visible 3D Primary Weapon model
+    // 3. Configure per-ship 3D Primary Weapon Hardpoint positions & toggle equipped weapon model
     const priId = currentLoadoutState.primaryWeaponId || 'cavitation_cannons';
-    priCavitationGroup.visible = priId === 'cavitation_cannons';
-    priBioLanceGroup.visible = priId === 'focused_bio_lance';
-    priBurstRepeaterGroup.visible = priId === 'burst_pulse_repeater';
+    const layout =
+      SHIP_HARDPOINT_LAYOUTS[shipId] ||
+      SHIP_HARDPOINT_LAYOUTS.vanguard_interceptor;
 
-    // 3. Toggle visible 3D Secondary Ordnance Pods
+    activePrimaryMuzzles = layout.primaryMounts.map(
+      (m) => new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2] - 1.1 * m.scale),
+    );
+    activeSecondaryMuzzles = layout.secondaryMounts.map(
+      (m) => new THREE.Vector3(m.pos[0], m.pos[1], m.pos[2] - 0.65),
+    );
+
+    primaryMountPods.forEach((pod, idx) => {
+      const mountSpec = layout.primaryMounts[idx];
+      if (!mountSpec) {
+        pod.root.visible = false;
+        return;
+      }
+      pod.root.visible = true;
+      pod.root.position.set(
+        mountSpec.pos[0],
+        mountSpec.pos[1],
+        mountSpec.pos[2],
+      );
+      pod.root.scale.setScalar(mountSpec.scale);
+      pod.cavitationModel.visible = priId === 'cavitation_cannons';
+      pod.lanceModel.visible = priId === 'focused_bio_lance';
+      pod.scatterModel.visible = priId === 'burst_pulse_repeater';
+    });
+
+    // 4. Toggle & scale visible 3D Secondary Ordnance Pods
+    secondaryOrdnanceRoot.scale.set(matchedBuild.wingSpanScale, 1, 1);
     const secId = currentLoadoutState.secondaryWeaponId || 'sonic_torpedoes';
     secSonicPodsGroup.visible = secId === 'sonic_torpedoes';
     secHeavyBreachGroup.visible = secId === 'heavy_breach_torpedo';
     secHexaSwarmGroup.visible = secId === 'hexa_swarm_rack';
 
-    // 4. Toggle all 8 visible 3D Instrument Modules & scale them by Upgrade Tier (I..III)
+    // 5. Toggle all 8 visible 3D Instrument Modules & scale them by Upgrade Tier (I..III)
     const activeMods = currentLoadoutState.activeUpgrades || [];
     const tiers = currentLoadoutState.upgradeTiers;
 
@@ -3708,7 +1465,7 @@ export function createVanguardShip(mats: MaterialBank): {
     modSiphonGroup.visible = activeMods.includes('biolume_siphon_array');
     modSiphonGroup.scale.setScalar(getModScale('biolume_siphon_array'));
 
-    // 5. Compute Ship Level / Total Upgrade Tier Visual Evolution (Mk.I -> Mk.II -> Mk.III)
+    // 6. Compute Ship Level / Total Upgrade Tier Visual Evolution (Mk.I -> Mk.II -> Mk.III)
     const totalTierPoints = activeMods.reduce(
       (sum, id) => sum + (tiers?.[id] || 1),
       0,
@@ -3717,11 +1474,29 @@ export function createVanguardShip(mats: MaterialBank): {
     tierMk2EvolutionGroup.visible = totalTierPoints >= 3 || pilotLv >= 3;
     tierMk3EvolutionGroup.visible = totalTierPoints >= 6 || pilotLv >= 6;
 
-    // 6. Subtle tactical livery tinting on hull & avionics
+    // 7. Subtle tactical livery tinting on hull & avionics + Mythic/Apex Reactor Halo (Tiers 8-12)
     shipTrimMat.color.setHex(trimHex);
     shipTrimMat.emissive.setHex(trimHex);
-    fireOuterPlasmaMat.color.setHex(trimHex);
-    shieldMat.color.setHex(trimHex);
+    shieldMat.color.setHex(shipDef.propulsionVfxConfig.primaryColorHex);
+    muzzleFlashFireMat.color.setHex(shipDef.weaponVfxConfig.boltColorHex);
+    muzzleFlashCoreMat.color.setHex(shipDef.weaponVfxConfig.coreColorHex);
+
+    const isPrestigeTier = (shipDef.tier || 1) >= 8;
+    prestigeHaloGroup.visible = isPrestigeTier;
+    if (isPrestigeTier) {
+      haloInnerMat.color.setHex(shipDef.propulsionVfxConfig.primaryColorHex);
+      haloOuterMat.color.setHex(
+        shipDef.tier === 12
+          ? 0xfbbf24
+          : shipDef.propulsionVfxConfig.secondaryColorHex,
+      );
+      const tierHaloScale = 0.88 + ((shipDef.tier - 8) / 4) * 0.24;
+      prestigeHaloGroup.scale.setScalar(tierHaloScale);
+    }
+  }
+
+  function setAbilityVisualState(active: boolean) {
+    activeAbilityVisual = active;
   }
 
   function triggerWeaponFire(isSecondary = false) {
@@ -3729,71 +1504,126 @@ export function createVanguardShip(mats: MaterialBank): {
     muzzleFlashTimer = isSecondary ? 0.12 : 0.075;
     muzzleFlashCoreMat.opacity = 0.95;
     muzzleFlashFireMat.opacity = 0.88;
-    muzzleFlashGroups.forEach((mf) => {
-      mf.visible = true;
-      mf.rotation.z = Math.random() * Math.PI * 2;
+    primaryMountPods.forEach((pod) => {
+      if (!pod.root.visible) return;
+      pod.muzzleFlash.visible = true;
+      pod.muzzleFlash.rotation.z = Math.random() * Math.PI * 2;
       const s = isSecondary ? 1.35 : 0.85 + Math.random() * 0.45;
-      mf.scale.setScalar(s);
+      pod.muzzleFlash.scale.setScalar(s);
+      pod.rotaryCluster.rotation.z += 0.85;
     });
   }
 
-  function updateShipEffects(elapsed: number, dt: number, surgeBoost: number) {
-    // Smoothly damp throttle state for realistic mechanical spool-up and spool-down
+  function getPrimaryMuzzleOffsets(): THREE.Vector3[] {
+    return activePrimaryMuzzles;
+  }
+
+  function getSecondaryMuzzleOffsets(): THREE.Vector3[] {
+    return activeSecondaryMuzzles;
+  }
+
+  function updateShipEffects(
+    elapsed: number,
+    dt: number,
+    surgeBoost: number,
+    turnSteer = 0,
+    damageRatio = 0,
+    isRolling = false,
+  ) {
     smoothThrottle = THREE.MathUtils.damp(
       smoothThrottle,
       surgeBoost,
       surgeBoost > smoothThrottle ? 14 : 5.5,
       dt,
     );
-    const boostFactor = Math.max(0, (smoothThrottle - 1.0) / 1.4); // 0.0 at idle -> 1.0+ at full Ignite
+    const boostFactor = Math.max(0, (smoothThrottle - 1.0) / 1.4);
+    const rollVal = isRolling ? 1.0 : 0.0;
 
-    // 1. Animate pump-jet rotor ring & rotating radar/sonar/turret assemblies on active hulls
-    turbineRing.rotation.z += dt * 6.5 * smoothThrottle;
-    if (tacticalChassis.visible) {
-      tacticalAwacsDish.rotation.y += dt * 1.8 * smoothThrottle;
-    }
-    if (krakenChassis.visible) {
-      krakenTurret.rotation.y = Math.sin(elapsed * 1.2) * 0.28;
-    }
-    if (poseidonChassis.visible) {
-      poseidonRadar.rotation.y += dt * 2.1 * smoothThrottle;
-    }
-    if (titanChassis.visible) {
-      titanRadar.rotation.y += dt * 1.9 * smoothThrottle;
-    }
-    if (sovereignChassis.visible) {
-      sovereignRadar1.rotation.y += dt * 1.6 * smoothThrottle;
-      sovereignRadar2.rotation.y -= dt * 2.4 * smoothThrottle;
-    }
+    // 1. Animate active ship chassis (sonar arrays, drones, reactor halos, articulated arms, turrets)
+    turbineRing.rotation.z += dt * (6.5 * smoothThrottle + rollVal * 12.0);
+    currentBuild.animate(elapsed, dt, smoothThrottle, activeAbilityVisual);
 
-    // 2. Dynamic Stern Afterburner Firelight
+    // 2. Dynamic Stern Cavitation Reactor Light & Hull Trim Illumination (with low-hull damage flicker)
+    const dmgFlicker =
+      damageRatio > 0.15
+        ? 1.0 - damageRatio * (0.55 * Math.abs(Math.sin(elapsed * 43)))
+        : 1.0;
     const highFreqFlicker =
-      0.92 + Math.sin(elapsed * 54) * 0.12 + Math.cos(elapsed * 71) * 0.08;
+      (0.92 + Math.sin(elapsed * 54) * 0.12 + Math.cos(elapsed * 71) * 0.08) *
+      dmgFlicker;
     afterburnerLight.intensity =
-      (1.8 + boostFactor * 6.4) * highFreqFlicker;
+      (1.8 +
+        boostFactor * 6.4 +
+        (activeAbilityVisual ? 1.6 : 0) +
+        rollVal * 2.2) *
+      highFreqFlicker;
     afterburnerLight.distance = 8.5 + boostFactor * 6.5;
 
-    // 3. Animate Variable-Geometry Nozzle Petals, Volumetric GLSL Flames, Mach Diamonds & Turbulent Embers
-    const lengthBoost = 1.0 + boostFactor * 1.15;
-    const radialBoost = 1.0 + boostFactor * 0.34;
+    // Hull bioluminescent trim breathing & low-hull damage flicker
+    shipTrimMat.emissiveIntensity =
+      (0.88 +
+        Math.sin(elapsed * 2.8) * 0.22 +
+        boostFactor * 0.72 +
+        (activeAbilityVisual ? 0.55 : 0)) *
+      dmgFlicker;
+
+    // Mythic & Apex Prestige Reactor Halo animation (Tiers 8-12)
+    if (prestigeHaloGroup.visible) {
+      prestigeOuterRing.rotation.z = elapsed * (0.65 + boostFactor * 0.9);
+      prestigeInnerRing.rotation.z = -elapsed * (1.05 + boostFactor * 1.2);
+      prestigeInnerRing.rotation.y = Math.sin(elapsed * 1.4) * 0.18;
+      haloOuterMat.opacity =
+        (0.32 + Math.sin(elapsed * 3.2) * 0.1 + boostFactor * 0.22) * dmgFlicker;
+      haloInnerMat.opacity =
+        (0.42 + Math.cos(elapsed * 4.1) * 0.12 + boostFactor * 0.25) * dmgFlicker;
+    }
+
+    // Mechanical weapon-pod micro-articulation & turn-tracking stabilization
+    primaryMountPods.forEach((pod, idx) => {
+      if (!pod.root.visible) return;
+      pod.root.rotation.y = -turnSteer * 0.14;
+      pod.root.rotation.x =
+        Math.sin(elapsed * 2.1 + idx * 0.9) * 0.022 - boostFactor * 0.03;
+    });
+    secondaryOrdnanceRoot.rotation.z = -turnSteer * 0.07;
+
+    // 3. Animate Variable-Geometry MHD Nozzle Petals, Ion-Cavitation Shaders, Vortex Spirals & Micro-Bubbles
+    const lengthBoost = 1.0 + boostFactor * 1.18 + rollVal * 0.25;
+    const radialBoost = 1.0 + boostFactor * 0.34 + rollVal * 0.18;
     const nozzleApertureScale =
       0.96 + boostFactor * 0.22 + Math.sin(elapsed * 18) * 0.015;
-    // Nozzle petals physically pivot open from converged (0.18 rad) to wide-open (-0.08 rad) during Ignite!
     const targetPetalAngle = 0.18 - boostFactor * 0.26;
 
     thrusterAssemblies.forEach((asm, idx) => {
-      if (asm.root.parent && !asm.root.parent.visible) return;
+      let pNode: THREE.Object3D | null = asm.root;
+      let isVisible = true;
+      while (pNode && pNode !== group) {
+        if (!pNode.visible) {
+          isVisible = false;
+          break;
+        }
+        pNode = pNode.parent;
+      }
+      if (!isVisible) return;
+
       const phase = idx * 1.3;
       const localFlicker =
         highFreqFlicker + Math.sin(elapsed * 41 + phase) * 0.09;
 
-      // Update GLSL shader uniforms
       asm.coreShaderUniforms.uTime.value = elapsed;
       asm.coreShaderUniforms.uThrottle.value = smoothThrottle;
+      asm.coreShaderUniforms.uTurnSteer.value = turnSteer;
+      asm.coreShaderUniforms.uDamageRatio.value = damageRatio;
+      asm.coreShaderUniforms.uRollState.value = rollVal;
+
       asm.plumeShaderUniforms.uTime.value = elapsed;
       asm.plumeShaderUniforms.uThrottle.value = smoothThrottle;
+      asm.plumeShaderUniforms.uTurnSteer.value = turnSteer;
+      asm.plumeShaderUniforms.uDamageRatio.value = damageRatio;
+      asm.plumeShaderUniforms.uRollState.value = rollVal;
 
-      // Articulate variable-geometry nozzle petals & internal glowing flame-holder
+      // Vectoring nozzle tilt during turning maneuvers
+      asm.nozzlePetalRing.rotation.y = -turnSteer * 0.22;
       asm.nozzlePetalRing.scale.set(
         nozzleApertureScale,
         nozzleApertureScale,
@@ -3804,9 +1634,8 @@ export function createVanguardShip(mats: MaterialBank): {
       }
 
       const fhMat = asm.flameHolderMesh.material as THREE.MeshStandardMaterial;
-      fhMat.emissiveIntensity = (0.75 + boostFactor * 2.8) * localFlicker;
+      fhMat.emissiveIntensity = (0.78 + boostFactor * 2.8) * localFlicker;
 
-      // Scale volumetric GLSL flame meshes
       asm.innerCore.scale.set(
         radialBoost,
         radialBoost,
@@ -3823,6 +1652,12 @@ export function createVanguardShip(mats: MaterialBank): {
         localFlicker * lengthBoost * 1.14,
       );
 
+      // Counter-rotating water-vortex induction spiral
+      asm.vortexSpiralMesh.rotation.z -=
+        dt * (7.5 + boostFactor * 11.0 + rollVal * 16.0);
+      const vortexScale = 1.0 + boostFactor * 0.35 + rollVal * 0.45;
+      asm.vortexSpiralMesh.scale.set(vortexScale, vortexScale, 1.0);
+
       for (let c = 0; c < asm.crossPlanes.length; c++) {
         const cp = asm.crossPlanes[c];
         cp.scale.set(
@@ -3834,40 +1669,42 @@ export function createVanguardShip(mats: MaterialBank): {
           c * (Math.PI / 2) + Math.sin(elapsed * 19 + phase) * 0.08;
       }
 
-      // Animate standing supersonic Mach shock diamonds
       asm.shockRings.forEach((ring, rIdx) => {
         const pulse =
-          (1.0 + boostFactor * 0.25) *
+          (1.0 + boostFactor * 0.28 + rollVal * 0.22) *
           (1 + Math.sin(elapsed * 42 - rIdx * 1.4 + phase) * 0.15);
         ring.scale.set(pulse, pulse, 1.0 + boostFactor * 0.45);
         ring.position.z =
           (0.24 + rIdx * 0.34) * asm.baseScale * lengthBoost;
+        ring.position.x = -turnSteer * (rIdx * 0.045) * asm.baseScale;
       });
 
-      // Stream turbulent incandescent embers & sparks out the exhaust vector
-      const emberSpeedMult = 1.0 + boostFactor * 1.85;
+      const emberSpeedMult = 1.0 + boostFactor * 1.85 + rollVal * 0.65;
       const maxStreamLength = (1.65 + boostFactor * 1.6) * asm.baseScale;
       for (let e = 0; e < asm.emberStreaks.length; e++) {
         const node = asm.emberStreaks[e];
         const cycle =
           (elapsed * node.speed * emberSpeedMult + node.seed) % 1.0;
         const zPos = 0.06 * asm.baseScale + cycle * maxStreamLength;
-        const spreadFactor = 0.35 + cycle * (1.1 + boostFactor * 0.9);
+        const spreadFactor =
+          0.35 + cycle * (1.1 + boostFactor * 0.9 + rollVal * 0.65);
         const swirlAngle =
-          node.radialAngle + elapsed * (4.5 + boostFactor * 5.0) + cycle * 2.4;
+          node.radialAngle +
+          elapsed * (4.5 + boostFactor * 5.0 + rollVal * 9.0) +
+          cycle * 2.4;
         const rDist = node.radialDist * spreadFactor;
 
         node.mesh.position.set(
-          Math.cos(swirlAngle) * rDist,
+          Math.cos(swirlAngle) * rDist - turnSteer * cycle * 0.18,
           Math.sin(swirlAngle) * rDist,
           zPos,
         );
-        const fade = Math.sin(cycle * Math.PI);
-        const streakStretch = (0.7 + boostFactor * 1.6) * fade;
+        const fade = Math.sin(cycle * Math.PI) * dmgFlicker;
+        const bubbleScale = fade * (0.85 + boostFactor * 0.45);
         node.mesh.scale.set(
-          fade * (0.85 + boostFactor * 0.4),
-          fade * (0.85 + boostFactor * 0.4),
-          Math.max(0.2, streakStretch),
+          bubbleScale,
+          bubbleScale,
+          Math.max(0.3, bubbleScale * (1.1 + boostFactor * 0.6)),
         );
       }
     });
@@ -3885,14 +1722,16 @@ export function createVanguardShip(mats: MaterialBank): {
       primaryWeaponsRoot.position.z = 0;
     }
 
-    // 5. Animate & fade fiery muzzle flash starbursts
+    // 5. Animate & fade muzzle cavitation starbursts
     if (muzzleFlashTimer > 0) {
       muzzleFlashTimer = Math.max(0, muzzleFlashTimer - dt);
       const ratio = muzzleFlashTimer / 0.08;
       muzzleFlashCoreMat.opacity = Math.min(1, ratio * 1.2);
       muzzleFlashFireMat.opacity = Math.min(0.9, ratio);
       muzzleFlashGroups.forEach((mf) => {
-        mf.scale.multiplyScalar(1 + dt * 6);
+        if (mf.visible) {
+          mf.scale.multiplyScalar(1 + dt * 6);
+        }
       });
       if (muzzleFlashTimer <= 0) {
         muzzleFlashGroups.forEach((mf) => {
@@ -3909,28 +1748,34 @@ export function createVanguardShip(mats: MaterialBank): {
     turbineRing,
     shieldSphere,
     setAppearance,
+    setAbilityVisualState,
     triggerWeaponFire,
+    getPrimaryMuzzleOffsets,
+    getSecondaryMuzzleOffsets,
     updateShipEffects,
   };
 }
 
 /**
- * Creates a realistic supercavitating armor-piercing tracer round with thermal wake & cavitation ring
+ * Creates a pooled 3D player primary projectile containing 3 distinct weapon-specific 3D geometries:
+ * 1. `cavitation_cannons`: Supercavitating bolt with dual collapsing hydro-bubble rings & vapor cone
+ * 2. `focused_bio_lance` (Thermal Lance Array): Elongated coherent hyper-thermal energy spear with helical ribbon
+ * 3. `burst_pulse_repeater` (Arc Shard Scatter): Tri-cluster of 3 angled crystalline electro-shards
  */
 export function createPlayerPrimaryBoltMesh(mats: MaterialBank): THREE.Group {
   const boltGroup = new THREE.Group();
 
   const innerCoreMat = new THREE.MeshBasicMaterial({
-    color: 0xfffbeb,
+    color: 0xecfeff,
     transparent: true,
     opacity: 0.98,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
   const tracerSheathMat = new THREE.MeshBasicMaterial({
-    color: 0xff9500,
+    color: 0x22d3ee,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.86,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
@@ -3938,73 +1783,217 @@ export function createPlayerPrimaryBoltMesh(mats: MaterialBank): THREE.Group {
   const cavitationWakeMat = new THREE.MeshBasicMaterial({
     color: 0xbae6fd,
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.58,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
 
-  // White-hot tungsten penetrator core
+  // 1. Cavitation Cannons 3D sub-group
+  const cavitationSubGroup = new THREE.Group();
   const coreGeo = new THREE.CapsuleGeometry(0.075, 1.3, 4, 8);
   coreGeo.rotateX(Math.PI / 2);
   const coreMesh = new THREE.Mesh(coreGeo, innerCoreMat);
-  boltGroup.add(coreMesh);
+  cavitationSubGroup.add(coreMesh);
 
-  // Hot incendiary tracer flare sheath
   const sheathGeo = new THREE.ConeGeometry(0.18, 1.85, 10, 1, true);
   sheathGeo.rotateX(-Math.PI / 2);
   const sheathMesh = new THREE.Mesh(sheathGeo, tracerSheathMat);
-  boltGroup.add(sheathMesh);
+  cavitationSubGroup.add(sheathMesh);
 
-  // Supercavitating vapor cone wake
   const wakeGeo = new THREE.ConeGeometry(0.16, 1.25, 8);
   wakeGeo.rotateX(Math.PI / 2);
   wakeGeo.translate(0, 0, 0.75);
   const wakeMesh = new THREE.Mesh(wakeGeo, cavitationWakeMat);
-  boltGroup.add(wakeMesh);
+  cavitationSubGroup.add(wakeMesh);
 
-  // Leading bow-shock cavitation ring
-  const ringMesh = new THREE.Mesh(
+  const ringFront = new THREE.Mesh(
     new THREE.TorusGeometry(0.18, 0.02, 6, 14),
     mats.flashWhite,
   );
-  ringMesh.position.set(0, 0, -0.38);
-  boltGroup.add(ringMesh);
+  ringFront.position.set(0, 0, -0.38);
+  const ringRear = new THREE.Mesh(
+    new THREE.TorusGeometry(0.13, 0.016, 6, 12),
+    cavitationWakeMat,
+  );
+  ringRear.position.set(0, 0, 0.35);
+  cavitationSubGroup.add(ringFront, ringRear);
+  boltGroup.add(cavitationSubGroup);
+
+  // 2. Thermal Lance Array (`focused_bio_lance`) 3D sub-group
+  const lanceSubGroup = new THREE.Group();
+  const lanceCore = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.055, 0.055, 2.95, 10).rotateX(Math.PI / 2),
+    innerCoreMat,
+  );
+  const lanceSheath = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.13, 0.08, 3.1, 12, 1, true).rotateX(
+      Math.PI / 2,
+    ),
+    tracerSheathMat,
+  );
+  const lanceCollar1 = new THREE.Mesh(
+    new THREE.TorusGeometry(0.19, 0.024, 6, 14),
+    cavitationWakeMat,
+  );
+  lanceCollar1.position.set(0, 0, -0.85);
+  const lanceCollar2 = new THREE.Mesh(
+    new THREE.TorusGeometry(0.14, 0.02, 6, 14),
+    cavitationWakeMat,
+  );
+  lanceCollar2.position.set(0, 0, 0.45);
+  lanceSubGroup.add(lanceCore, lanceSheath, lanceCollar1, lanceCollar2);
+  lanceSubGroup.visible = false;
+  boltGroup.add(lanceSubGroup);
+
+  // 3. Arc Shard Scatter (`burst_pulse_repeater`) 3D sub-group
+  const shardSubGroup = new THREE.Group();
+  const shardGeo = new THREE.OctahedronGeometry(0.15, 0);
+  shardGeo.scale(0.75, 0.75, 2.4);
+  [
+    [0, 0.08, -0.2],
+    [-0.14, -0.07, 0.12],
+    [0.14, -0.07, 0.12],
+  ].forEach(([sx, sy, sz]) => {
+    const shard = new THREE.Mesh(shardGeo, innerCoreMat);
+    shard.position.set(sx, sy, sz);
+    const halo = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.19, 0),
+      tracerSheathMat,
+    );
+    halo.scale.set(0.85, 0.85, 2.1);
+    halo.position.set(sx, sy, sz);
+    shardSubGroup.add(shard, halo);
+  });
+  const arcRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.22, 0.018, 5, 8),
+    cavitationWakeMat,
+  );
+  shardSubGroup.add(arcRing);
+  shardSubGroup.visible = false;
+  boltGroup.add(shardSubGroup);
+
+  boltGroup.userData = {
+    innerCoreMat,
+    tracerSheathMat,
+    cavitationWakeMat,
+    cavitationSubGroup,
+    lanceSubGroup,
+    shardSubGroup,
+  };
 
   return boltGroup;
 }
 
 /**
- * Creates a realistic 3D Naval Heavyweight Homing Torpedo with Bronze Warhead Band, Shrouded Pump-Jet Tail, and Rocket Exhaust
+ * Updates pooled projectile / torpedo 3D sub-geometry, colors, and scale dynamically
+ * to match both the active vessel's weapon VFX identity and the equipped weapon type.
+ */
+export function applyPlayerWeaponVfxToMesh(
+  mesh: THREE.Group,
+  vfx: ShipWeaponVfxConfig,
+  isTorpedo: boolean,
+  primaryWeaponId: PrimaryWeaponId = 'cavitation_cannons',
+  secondaryWeaponId: SecondaryWeaponId = 'sonic_torpedoes',
+) {
+  if (isTorpedo) {
+    const {
+      fireMat,
+      coreMat,
+      sonicSubGroup,
+      empSubGroup,
+      swarmSubGroup,
+    } = mesh.userData as {
+      fireMat?: THREE.MeshBasicMaterial;
+      coreMat?: THREE.MeshBasicMaterial;
+      sonicSubGroup?: THREE.Group;
+      empSubGroup?: THREE.Group;
+      swarmSubGroup?: THREE.Group;
+    };
+    if (fireMat) fireMat.color.setHex(vfx.torpedoColorHex);
+    if (coreMat) coreMat.color.setHex(vfx.coreColorHex);
+    if (sonicSubGroup)
+      sonicSubGroup.visible = secondaryWeaponId === 'sonic_torpedoes';
+    if (empSubGroup)
+      empSubGroup.visible = secondaryWeaponId === 'heavy_breach_torpedo';
+    if (swarmSubGroup)
+      swarmSubGroup.visible = secondaryWeaponId === 'hexa_swarm_rack';
+    mesh.scale.setScalar(Math.max(0.9, vfx.boltScale * 0.95));
+  } else {
+    const {
+      innerCoreMat,
+      tracerSheathMat,
+      cavitationWakeMat,
+      cavitationSubGroup,
+      lanceSubGroup,
+      shardSubGroup,
+    } = mesh.userData as {
+      innerCoreMat?: THREE.MeshBasicMaterial;
+      tracerSheathMat?: THREE.MeshBasicMaterial;
+      cavitationWakeMat?: THREE.MeshBasicMaterial;
+      cavitationSubGroup?: THREE.Group;
+      lanceSubGroup?: THREE.Group;
+      shardSubGroup?: THREE.Group;
+    };
+    if (innerCoreMat) innerCoreMat.color.setHex(vfx.coreColorHex);
+    if (tracerSheathMat) tracerSheathMat.color.setHex(vfx.boltColorHex);
+    if (cavitationWakeMat) cavitationWakeMat.color.setHex(vfx.boltColorHex);
+    if (cavitationSubGroup)
+      cavitationSubGroup.visible = primaryWeaponId === 'cavitation_cannons';
+    if (lanceSubGroup)
+      lanceSubGroup.visible = primaryWeaponId === 'focused_bio_lance';
+    if (shardSubGroup)
+      shardSubGroup.visible = primaryWeaponId === 'burst_pulse_repeater';
+    mesh.scale.setScalar(vfx.boltScale);
+  }
+}
+
+/**
+ * Creates a pooled 3D Secondary Warhead mesh containing 3 distinct ordnance silhouettes:
+ * 1. `sonic_torpedoes` (Sonic Torpedoes): Acoustic warhead with sonar rings & shrouded pump-jet tail
+ * 2. `heavy_breach_torpedo` (EMP Depth Seekers): Heavy electromagnetic seeker wrapped in glowing induction coils
+ * 3. `hexa_swarm_rack` (Hadal Swarm Pods): Twin agile micro-missile swarm darts with swept hydro-fins
  */
 export function createPlayerTorpedoMesh(mats: MaterialBank): THREE.Group {
   const torpGroup = new THREE.Group();
 
+  const fireMat = new THREE.MeshBasicMaterial({
+    color: 0x38bdf8,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0xecfeff,
+    transparent: true,
+    opacity: 0.95,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  // 1. Sonic Torpedoes (`sonic_torpedoes`)
+  const sonicSubGroup = new THREE.Group();
   const body = new THREE.Mesh(
     new THREE.CylinderGeometry(0.14, 0.15, 1.42, 14).rotateX(Math.PI / 2),
     mats.darkGraphiteTrim,
   );
-  torpGroup.add(body);
-
   const warheadBand = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.145, 0.145, 0.22, 14).rotateX(Math.PI / 2),
-    new THREE.MeshStandardMaterial({
-      color: 0xd97706,
-      metalness: 0.82,
-      roughness: 0.3,
-    }),
+    new THREE.CylinderGeometry(0.148, 0.148, 0.22, 14).rotateX(Math.PI / 2),
+    fireMat,
   );
   warheadBand.position.set(0, 0, -0.52);
-  torpGroup.add(warheadBand);
-
   const noseCone = new THREE.Mesh(
     new THREE.SphereGeometry(0.14, 12, 10),
     mats.titaniumHull,
   );
   noseCone.scale.set(1, 1, 1.45);
   noseCone.position.set(0, 0, -0.72);
-  torpGroup.add(noseCone);
-
+  const sonarPulseRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.22, 0.018, 6, 16),
+    coreMat,
+  );
+  sonarPulseRing.position.set(0, 0, -0.82);
   const fins = new THREE.Mesh(
     new THREE.BoxGeometry(0.56, 0.05, 0.34),
     mats.titaniumHull,
@@ -4022,24 +2011,59 @@ export function createPlayerTorpedoMesh(mats: MaterialBank): THREE.Group {
     mats.titaniumHull,
   );
   tailShroud.position.set(0, 0, 0.58);
-  torpGroup.add(fins, finsV, tailShroud);
+  sonicSubGroup.add(
+    body,
+    warheadBand,
+    noseCone,
+    sonarPulseRing,
+    fins,
+    finsV,
+    tailShroud,
+  );
+  torpGroup.add(sonicSubGroup);
 
-  // Live burning rocket / supercavitating gas-generator exhaust cone at torpedo tail
-  const fireMat = new THREE.MeshBasicMaterial({
-    color: 0xff6b00,
-    transparent: true,
-    opacity: 0.9,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
+  // 2. EMP Depth Seekers (`heavy_breach_torpedo`)
+  const empSubGroup = new THREE.Group();
+  const empBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.18, 1.56, 16).rotateX(Math.PI / 2),
+    mats.obsidianArmor,
+  );
+  const empSphereCore = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.22, 1),
+    coreMat,
+  );
+  empSphereCore.position.set(0, 0, -0.68);
+  [-0.55, -0.15, 0.25].forEach((cz) => {
+    const coil = new THREE.Mesh(
+      new THREE.TorusGeometry(0.23, 0.026, 8, 16),
+      fireMat,
+    );
+    coil.position.set(0, 0, cz);
+    empSubGroup.add(coil);
   });
-  const coreMat = new THREE.MeshBasicMaterial({
-    color: 0xfffbeb,
-    transparent: true,
-    opacity: 0.95,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
+  empSubGroup.add(empBody, empSphereCore);
+  empSubGroup.visible = false;
+  torpGroup.add(empSubGroup);
 
+  // 3. Hadal Swarm Pods (`hexa_swarm_rack`)
+  const swarmSubGroup = new THREE.Group();
+  [-0.14, 0.14].forEach((ox) => {
+    const dartBody = new THREE.Mesh(
+      new THREE.ConeGeometry(0.09, 1.15, 8).rotateX(-Math.PI / 2),
+      mats.titaniumHull,
+    );
+    dartBody.position.set(ox, 0, -0.1);
+    const dartCore = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.045, 0.65, 4, 8).rotateX(Math.PI / 2),
+      coreMat,
+    );
+    dartCore.position.set(ox, 0, -0.2);
+    swarmSubGroup.add(dartBody, dartCore);
+  });
+  swarmSubGroup.visible = false;
+  torpGroup.add(swarmSubGroup);
+
+  // Shared underwater cavitation plasma plume at tail
   const fireCone = new THREE.Mesh(
     new THREE.ConeGeometry(0.19, 1.15, 10).rotateX(Math.PI / 2),
     fireMat,
@@ -4052,6 +2076,13 @@ export function createPlayerTorpedoMesh(mats: MaterialBank): THREE.Group {
   innerCone.position.set(0, 0, 0.96);
   torpGroup.add(fireCone, innerCone);
 
+  torpGroup.userData = {
+    fireMat,
+    coreMat,
+    sonicSubGroup,
+    empSubGroup,
+    swarmSubGroup,
+  };
   return torpGroup;
 }
 

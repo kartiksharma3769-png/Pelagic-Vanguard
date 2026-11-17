@@ -1,3 +1,5 @@
+import { ShipAudioProfile } from './types';
+
 /**
  * Procedural Web Audio API Sound Engine for Pelagic Vanguard.
  * Zero external audio file dependencies.
@@ -7,6 +9,12 @@ class AbyssalAudioEngine {
   private ctx: AudioContext | null = null;
   private muted: boolean = false;
   private noiseBuffer: AudioBuffer | null = null;
+  private shipProfile: ShipAudioProfile = {
+    laserFreqBase: 820,
+    laserType: 'triangle',
+    thrustPitchMult: 1.0,
+    abilityFreq: 660,
+  };
 
   constructor() {
     try {
@@ -17,6 +25,10 @@ class AbyssalAudioEngine {
     } catch {
       // Ignore storage access errors
     }
+  }
+
+  public setShipAudioProfile(profile: ShipAudioProfile): void {
+    this.shipProfile = profile;
   }
 
   private ensureContext(): AudioContext | null {
@@ -84,10 +96,14 @@ class AbyssalAudioEngine {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
-    osc.type = overcharged ? 'sawtooth' : 'triangle';
-    const startFreq = overcharged ? 980 : 820;
+    osc.type = overcharged ? 'sawtooth' : this.shipProfile.laserType;
+    const baseFreq = this.shipProfile.laserFreqBase;
+    const startFreq = overcharged ? baseFreq * 1.18 : baseFreq;
     osc.frequency.setValueAtTime(startFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(140, now + 0.095);
+    osc.frequency.exponentialRampToValueAtTime(
+      Math.max(85, baseFreq * 0.17),
+      now + 0.095,
+    );
 
     gain.gain.setValueAtTime(0.11, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.095);
@@ -97,6 +113,38 @@ class AbyssalAudioEngine {
 
     osc.start(now);
     osc.stop(now + 0.1);
+  }
+
+  public playShipAbility(freqOverride?: number): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const base = freqOverride || this.shipProfile.abilityFreq;
+
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc1.type = 'sine';
+    osc2.type = 'triangle';
+    osc1.frequency.setValueAtTime(base * 0.75, now);
+    osc1.frequency.exponentialRampToValueAtTime(base * 1.65, now + 0.34);
+
+    osc2.frequency.setValueAtTime(base * 1.12, now);
+    osc2.frequency.exponentialRampToValueAtTime(base * 2.1, now + 0.34);
+
+    gain.gain.setValueAtTime(0.14, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.4);
+    osc2.stop(now + 0.4);
   }
 
   public playSonarPing(pitch: number = 780): void {

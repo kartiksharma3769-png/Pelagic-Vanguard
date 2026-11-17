@@ -2,10 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Crosshair,
   Eye,
+  FileText,
   Flame,
   Layers,
   Lock,
@@ -33,7 +36,10 @@ import {
   UpgradeId,
   WeaponDefinition,
 } from '../game/types';
-import { calculateFleetPower } from '../game/saveManager';
+import {
+  calculateFleetPower,
+  isShipMissionUnlocked,
+} from '../game/saveManager';
 
 interface HangarViewProps {
   save: PlayerSaveData;
@@ -79,6 +85,8 @@ function computeStatsForLoadout(
     return 1 + (t - 1) * 0.25;
   };
 
+  const cappedUpgrades = activeUpgrades.slice(0, ship.moduleCapacity);
+
   let hull = ship.baseHull;
   let shield = ship.baseShield;
   let speed = ship.baseSpeed;
@@ -89,35 +97,38 @@ function computeStatsForLoadout(
     (primary.damage / Math.max(0.08, primary.cooldownSeconds)) *
     ship.cannonDamageMult *
     ship.fireRateMult;
-  let firepower = Math.round(baseDps * 0.55 + secondary.damage * 0.22);
+  const secDps =
+    (secondary.damage * (ship.secondaryDamageMult || 1)) /
+    Math.max(1.5, secondary.cooldownSeconds * (ship.torpedoCooldownMult || 1));
+  let firepower = Math.round(baseDps * 0.52 + secDps * 0.85);
 
-  if (activeUpgrades.includes('cavitation_overcharge')) {
+  if (cappedUpgrades.includes('cavitation_overcharge')) {
     firepower = Math.round(
       firepower * (1 + 0.22 * getTierMult('cavitation_overcharge')),
     );
   }
-  if (activeUpgrades.includes('quad_torpedo_salvo')) {
+  if (cappedUpgrades.includes('quad_torpedo_salvo')) {
     const t = upgradeTiers.quad_torpedo_salvo || 1;
     locks += t >= 3 ? 3 : 2;
     firepower += 18 * t;
   }
-  if (activeUpgrades.includes('piezo_hull_regen')) {
+  if (cappedUpgrades.includes('piezo_hull_regen')) {
     hull += Math.round(25 * getTierMult('piezo_hull_regen'));
   }
-  if (activeUpgrades.includes('voltaic_shield_capacitor')) {
+  if (cappedUpgrades.includes('voltaic_shield_capacitor')) {
     shield += Math.round(35 * getTierMult('voltaic_shield_capacitor'));
   }
-  if (activeUpgrades.includes('hydro_thruster_coil')) {
+  if (cappedUpgrades.includes('hydro_thruster_coil')) {
     speed = +(speed * (1 + 0.16 * getTierMult('hydro_thruster_coil'))).toFixed(1);
   }
-  if (activeUpgrades.includes('hadal_pressure_Bulkhead')) {
+  if (cappedUpgrades.includes('hadal_pressure_Bulkhead')) {
     pressureRes = Math.min(
       92,
       Math.round(pressureRes + 30 * getTierMult('hadal_pressure_Bulkhead')),
     );
     hull += Math.round(18 * getTierMult('hadal_pressure_Bulkhead'));
   }
-  if (activeUpgrades.includes('sonar_crit_visor')) {
+  if (cappedUpgrades.includes('sonar_crit_visor')) {
     firepower += Math.round(16 * getTierMult('sonar_crit_visor'));
   }
 
@@ -140,6 +151,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
 }) => {
   const [category, setCategory] = useState<HangarCategory>('weapons');
   const [isInspecting3D, setIsInspecting3D] = useState<boolean>(false);
+  const [showSpecSheet, setShowSpecSheet] = useState<boolean>(false);
   const [previewShipId, setPreviewShipId] = useState<ShipClassId>(
     save.selectedShip,
   );
@@ -273,7 +285,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       unit: '',
       curr: currentStats.hull,
       next: candidateStats.hull,
-      max: 360,
+      max: 400,
       color: 'bg-emerald-400',
     },
     {
@@ -281,7 +293,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       unit: '',
       curr: currentStats.shield,
       next: candidateStats.shield,
-      max: 350,
+      max: 380,
       color: 'bg-cyan-400',
     },
     {
@@ -289,7 +301,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       unit: '',
       curr: currentStats.firepower,
       next: candidateStats.firepower,
-      max: 380,
+      max: 500,
       color: 'bg-amber-400',
     },
     {
@@ -305,7 +317,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
       unit: '',
       curr: currentStats.locks,
       next: candidateStats.locks,
-      max: 11,
+      max: 12,
       color: 'bg-fuchsia-400',
     },
     {
@@ -332,7 +344,9 @@ export const HangarView: React.FC<HangarViewProps> = ({
 
   const shipOwned = save.ownedShips.includes(currentShipDef.id);
   const shipEquipped = save.selectedShip === currentShipDef.id;
+  const shipMissionUnlocked = isShipMissionUnlocked(currentShipDef, save);
   const canAffordShip =
+    shipMissionUnlocked &&
     save.salvageCredits >= currentShipDef.costCredits &&
     save.abyssalMaterials >= currentShipDef.costMaterials;
 
@@ -343,7 +357,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
     return (
       <div className="relative h-full w-full flex flex-col justify-between p-3 sm:p-5 pt-safe pb-safe px-safe pointer-events-none select-none overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="pointer-events-auto rounded-2xl bg-slate-950/80 backdrop-blur-md ring-1 ring-white/15 px-3.5 py-2.5 shadow-xl max-w-xs sm:max-w-sm">
+          <div className="pointer-events-auto rounded-2xl bg-slate-950/85 backdrop-blur-md ring-1 ring-white/15 px-3.5 py-2.5 shadow-xl max-w-xs sm:max-w-md">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
               <span className="font-mono font-bold text-amber-300">
                 TIER {currentShipTier}/{SHIP_CATALOG.length}
@@ -353,11 +367,11 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 className="font-semibold"
                 style={{ color: currentShipDef.accentColor }}
               >
-                {currentShipDef.classLabel}
+                {currentShipDef.rarity}
               </span>
               <span aria-hidden="true">·</span>
-              <span className="font-mono text-cyan-300 font-bold tabular-nums">
-                {fleetPower} PWR
+              <span className="truncate text-slate-200">
+                {currentShipDef.roleTitle}
               </span>
             </div>
             <h1 className="font-display text-lg sm:text-xl font-bold text-white truncate">
@@ -366,7 +380,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
             <p className="text-[11px] text-slate-300 truncate">
               {currentShipDef.subtitle}
             </p>
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               {shipOwned ? (
                 <button
                   onClick={() => onSelectShip(currentShipDef.id)}
@@ -388,6 +402,7 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 <button
                   onClick={() => onUnlockShip(currentShipDef.id)}
                   disabled={!canAffordShip}
+                  title={currentShipDef.unlockRequirementText}
                   className={`min-h-[40px] rounded-xl px-3.5 text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
                     canAffordShip
                       ? 'bg-amber-400 text-slate-950 cursor-pointer'
@@ -396,14 +411,71 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 >
                   <Lock className="h-3.5 w-3.5" />
                   <span>
-                    Unlock {currentShipDef.costCredits} CR
-                    {currentShipDef.costMaterials > 0
-                      ? ` + ${currentShipDef.costMaterials} AL`
-                      : ''}
+                    {!shipMissionUnlocked
+                      ? currentShipDef.unlockRequirementText
+                      : `Unlock ${currentShipDef.costCredits} CR${
+                          currentShipDef.costMaterials > 0
+                            ? ` + ${currentShipDef.costMaterials} AL`
+                            : ''
+                        }`}
                   </span>
                 </button>
               )}
+
+              <button
+                onClick={() => setShowSpecSheet((prev) => !prev)}
+                className="min-h-[40px] rounded-xl bg-slate-900/90 ring-1 ring-white/15 px-3 text-xs font-semibold text-cyan-200 hover:bg-white/10 transition cursor-pointer flex items-center gap-1 whitespace-nowrap"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                <span>Specs</span>
+                {showSpecSheet ? (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+              </button>
             </div>
+
+            {showSpecSheet && (
+              <div className="mt-2.5 max-h-[42dvh] overflow-y-auto space-y-2 border-t border-white/10 pt-2.5 text-[11px] leading-relaxed text-slate-200">
+                <div>
+                  <span className="font-semibold text-fuchsia-300">
+                    Active — {currentShipDef.activeAbility.name}
+                  </span>
+                  <span className="text-slate-400 ml-1.5 font-mono text-[10px]">
+                    ({currentShipDef.activeAbility.cooldownSeconds}s CD ·{' '}
+                    {currentShipDef.activeAbility.durationSeconds}s)
+                  </span>
+                  <p className="text-slate-300 mt-0.5">
+                    {currentShipDef.activeAbility.description}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-semibold text-cyan-300">
+                    Passive — {currentShipDef.passiveAbility.name}
+                  </span>
+                  <p className="text-slate-300 mt-0.5">
+                    {currentShipDef.passiveAbility.description}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300">
+                  <div>
+                    <span className="text-slate-400">Primary:</span>{' '}
+                    {currentShipDef.primaryWeaponLabel}
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Secondary:</span>{' '}
+                    {currentShipDef.secondaryWeaponLabel}
+                  </div>
+                </div>
+                <div className="text-[10px] text-amber-200/90">
+                  {currentShipDef.tradeOffText}
+                </div>
+                <p className="text-[10px] text-slate-400 italic">
+                  {currentShipDef.loreText}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="pointer-events-auto flex items-center gap-1.5">
@@ -678,6 +750,24 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 <ChevronRight className="h-4 w-4" />
               </button>
 
+              <button
+                onClick={() => setShowSpecSheet((prev) => !prev)}
+                aria-label="Toggle Ship Spec Sheet"
+                className={`min-h-[44px] shrink-0 rounded-xl px-2.5 text-xs font-bold transition cursor-pointer flex items-center gap-1 border ${
+                  showSpecSheet
+                    ? 'bg-fuchsia-500/25 border-fuchsia-400/60 text-fuchsia-200'
+                    : 'bg-slate-900/90 border-white/15 text-slate-200 hover:bg-white/10'
+                }`}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                <span className="hidden xs:inline">Specs</span>
+                {showSpecSheet ? (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+              </button>
+
               {shipOwned ? (
                 <button
                   onClick={() => onSelectShip(currentShipDef.id)}
@@ -693,13 +783,20 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 <button
                   onClick={() => onUnlockShip(currentShipDef.id)}
                   disabled={!canAffordShip}
+                  title={currentShipDef.unlockRequirementText}
                   className={`min-h-[44px] shrink-0 rounded-xl px-2.5 text-xs font-bold transition whitespace-nowrap ${
                     canAffordShip
                       ? 'bg-amber-400 text-slate-950 cursor-pointer'
                       : 'bg-slate-900 text-slate-500 ring-1 ring-white/10 cursor-not-allowed'
                   }`}
                 >
-                  {currentShipDef.costCredits} CR
+                  {!shipMissionUnlocked
+                    ? 'Mission Locked'
+                    : `${currentShipDef.costCredits} CR${
+                        currentShipDef.costMaterials > 0
+                          ? ` + ${currentShipDef.costMaterials} AL`
+                          : ''
+                      }`}
                 </button>
               )}
             </div>
@@ -730,6 +827,118 @@ export const HangarView: React.FC<HangarViewProps> = ({
                 );
               })}
             </div>
+
+            {/* Expandable Full Ship Spec Sheet */}
+            {showSpecSheet && (
+              <div className="max-h-[28dvh] overflow-y-auto rounded-2xl bg-slate-900/90 border border-white/10 p-2.5 space-y-2 text-[11px] leading-relaxed">
+                <div className="flex flex-wrap items-center justify-between gap-1 text-[10px]">
+                  <span
+                    className="font-bold"
+                    style={{ color: currentShipDef.accentColor }}
+                  >
+                    {currentShipDef.rarity} · {currentShipDef.roleTitle}
+                  </span>
+                  <span className="font-mono text-emerald-300 font-bold">
+                    Fleet Power Index: {currentShipDef.fleetPowerIndex}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 text-[9px] font-mono bg-slate-950/75 rounded-xl p-1.5 border border-white/10">
+                  <div>
+                    <span className="text-slate-400">ACCEL </span>
+                    <span className="text-cyan-300 font-bold">
+                      {Math.round(currentShipDef.accelerationMult * 100)}%
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">TURN </span>
+                    <span className="text-sky-300 font-bold">
+                      {Math.round(currentShipDef.turnRateMult * 100)}%
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">FIRE </span>
+                    <span className="text-amber-300 font-bold">
+                      {Math.round(currentShipDef.fireRateMult * 100)}%
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">TORP CD </span>
+                    <span className="text-fuchsia-300 font-bold">
+                      {Math.round(currentShipDef.torpedoCooldownMult * 100)}%
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">SONAR </span>
+                    <span className="text-teal-300 font-bold">
+                      +{currentShipDef.sonarDurationBonus}s
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">SLOTS </span>
+                    <span className="text-emerald-300 font-bold">
+                      {currentShipDef.moduleCapacity}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-slate-950/65 p-2 border border-fuchsia-400/20">
+                    <div className="font-semibold text-fuchsia-300 flex items-center justify-between gap-1">
+                      <span className="truncate">
+                        Active: {currentShipDef.activeAbility.name}
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400 shrink-0 tabular-nums">
+                        {currentShipDef.activeAbility.cooldownSeconds}s CD
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[10px] text-slate-300">
+                      {currentShipDef.activeAbility.description}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-slate-950/65 p-2 border border-cyan-400/20">
+                    <div className="font-semibold text-cyan-300 truncate">
+                      Passive: {currentShipDef.passiveAbility.name}
+                    </div>
+                    <p className="mt-0.5 text-[10px] text-slate-300">
+                      {currentShipDef.passiveAbility.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px] text-slate-300">
+                  <div>
+                    <span className="text-slate-400">Primary Mounts:</span>{' '}
+                    {currentShipDef.primaryWeaponLabel}
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Torpedo Mounts:</span>{' '}
+                    {currentShipDef.secondaryWeaponLabel}
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Boost Propulsion:</span>{' '}
+                    {currentShipDef.boostSignatureLabel}
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Evade Maneuver:</span>{' '}
+                    {currentShipDef.evadeSignatureLabel}
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-amber-200/90">
+                  {currentShipDef.tradeOffText}
+                </div>
+                {!shipOwned && (
+                  <div className="text-[10px] font-semibold text-cyan-300">
+                    Requisition Gate: {currentShipDef.unlockRequirementText}
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-400 italic">
+                  {currentShipDef.loreText}
+                </p>
+              </div>
+            )}
 
             {/* Compact 6-Stat Mini Bar */}
             <div className="grid grid-cols-6 gap-1.5 pt-0.5">

@@ -36,38 +36,146 @@ export type EnemyType =
 
 export type ShipClassId =
   | 'vanguard_interceptor'
-  | 'barracuda_skimmer'
   | 'leviathan_assault'
-  | 'aegis_guardian'
   | 'echo_tactical'
-  | 'seawolf_hunter'
-  | 'kraken_siege'
-  | 'poseidon_carrier'
-  | 'charybdis_jugger'
-  | 'valkyrie_supersonic'
-  | 'titan_dreadnought'
-  | 'sovereign_leviathan';
+  | 'aegis_guardian'
+  | 'abyssal_talon'
+  | 'tempest_corsair'
+  | 'rift_manta'
+  | 'leviathan_breaker'
+  | 'trench_warden'
+  | 'kraken_reaper'
+  | 'abyssal_sovereign'
+  | 'pelagic_ascendant';
+
+export type ShipRarity =
+  | 'Standard'
+  | 'Advanced'
+  | 'Elite'
+  | 'Rare'
+  | 'Epic'
+  | 'Legendary'
+  | 'Mythic'
+  | 'Ultimate';
+
+export type ShipActiveAbilityId =
+  | 'resonance_scan'
+  | 'riptide_overdrive'
+  | 'phantom_sonar'
+  | 'aegis_pulse'
+  | 'predator_mark'
+  | 'arc_storm'
+  | 'phase_slip'
+  | 'seismic_lock'
+  | 'guardian_swarm'
+  | 'gravitic_harpoon'
+  | 'sovereign_barrage'
+  | 'pelagic_singularity';
+
+export type ShipPropulsionStyle =
+  | 'ion_cavitation'
+  | 'crimson_coil'
+  | 'stealth_wisp'
+  | 'heavy_hydro'
+  | 'predator_jet'
+  | 'arc_ion'
+  | 'phase_ribbon'
+  | 'thermal_lance'
+  | 'warden_jade'
+  | 'kraken_vortex'
+  | 'dreadnought_flare'
+  | 'ascendant_halo';
+
+export type ShipWeaponBoltStyle =
+  | 'cavitation_cyan'
+  | 'pulse_crimson'
+  | 'sonic_violet'
+  | 'bastion_amber'
+  | 'talon_lime'
+  | 'corsair_arc'
+  | 'manta_phase'
+  | 'breaker_siege'
+  | 'warden_jade'
+  | 'kraken_emerald'
+  | 'sovereign_crimson'
+  | 'ascendant_lance';
+
+export interface ShipActiveAbilityDef {
+  id: ShipActiveAbilityId;
+  name: string;
+  description: string;
+  cooldownSeconds: number;
+  durationSeconds: number;
+}
+
+export interface ShipPassiveAbilityDef {
+  name: string;
+  description: string;
+}
+
+export interface ShipPropulsionVfxConfig {
+  style: ShipPropulsionStyle;
+  primaryColorHex: number;
+  secondaryColorHex: number;
+  emberColorHex: number;
+  bubbleDensity: number;
+  plumeScale: number;
+}
+
+export interface ShipWeaponVfxConfig {
+  style: ShipWeaponBoltStyle;
+  boltColorHex: number;
+  coreColorHex: number;
+  torpedoColorHex: number;
+  boltScale: number;
+}
+
+export interface ShipAudioProfile {
+  laserFreqBase: number;
+  laserType: OscillatorType;
+  thrustPitchMult: number;
+  abilityFreq: number;
+}
 
 export interface ShipDefinition {
   id: ShipClassId;
-  tier?: number;
+  tier: number;
   name: string;
   classLabel: 'Interceptor' | 'Assault' | 'Guardian' | 'Tactical';
+  roleTitle: string;
+  rarity: ShipRarity;
   subtitle: string;
   description: string;
+  loreText: string;
   tradeOffText: string;
+  primaryWeaponLabel: string;
+  secondaryWeaponLabel: string;
+  activeAbility: ShipActiveAbilityDef;
+  passiveAbility: ShipPassiveAbilityDef;
+  boostSignatureLabel: string;
+  evadeSignatureLabel: string;
+  propulsionVfxConfig: ShipPropulsionVfxConfig;
+  weaponVfxConfig: ShipWeaponVfxConfig;
+  audioProfile: ShipAudioProfile;
   costCredits: number;
   costMaterials: number;
+  unlockMissionId: string | null;
   unlockRequirementText: string;
   requiredStageCleared: number; // 0 = starter
+  fleetPowerIndex: number; // 100..178 progression target
   baseHull: number;
   baseShield: number;
-  baseSpeed: number; // 18..32
+  baseSpeed: number; // 18..34
+  accelerationMult: number;
+  turnRateMult: number;
   cannonDamageMult: number;
   fireRateMult: number;
+  secondaryDamageMult: number;
+  torpedoCooldownMult: number;
   baseTorpedoLocks: number;
   sonarDurationBonus: number;
   pressureResistancePct: number;
+  abilityStrengthMult: number;
   moduleCapacity: number;
   accentColor: string;
   primaryHullHex: number;
@@ -415,6 +523,14 @@ export interface HudSnapshot {
   sonarWeakPointSlot: AppendageSlot | 'core' | null;
   sonarHazardsCount: number;
   barrelRolling: boolean;
+  shipRarity: ShipRarity;
+  shipRoleTitle: string;
+  activeAbilityName: string;
+  activeAbilityActive: boolean;
+  activeAbilityRemainingSeconds: number;
+  activeAbilityCooldown: number; // 0..1 (0 = ready)
+  activeAbilityCooldownSeconds: number;
+  activeDronesCount: number;
   bossActive: boolean;
   bossName: string;
   bossSubtitle: string;

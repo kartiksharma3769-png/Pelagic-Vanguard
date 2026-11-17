@@ -16,7 +16,9 @@ import {
   MedalRank,
   PlayerSaveData,
   ScreenLockTarget,
+  ShipActiveAbilityId,
   ShipClassId,
+  ShipRarity,
   StageId,
   UpgradeId,
   WeaponId,
@@ -36,6 +38,7 @@ import {
   applyPilotXp,
   getAchievementProgress,
   getUnlockedStagesFromSave,
+  isShipMissionUnlocked,
   loadPlayerSave,
   resetPlayerSave,
   savePlayerData,
@@ -43,6 +46,7 @@ import {
 import {
   BiolumeDamageUniforms,
   BossAppendage3DNode,
+  applyPlayerWeaponVfxToMesh,
   createBossMesh,
   createEnemyMesh,
   createMaterialBank,
@@ -143,6 +147,7 @@ export interface SimulationController {
   triggerBarrelRoll: () => void;
   triggerTorpedoSalvo: () => void;
   triggerTacticalSonar: () => void;
+  triggerShipAbility: () => void;
   focusBossAppendage: (slot: AppendageSlot) => void;
   summonBossNow: () => void;
 }
@@ -518,8 +523,11 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       count: number = 18,
       speedScale: number = 18,
     ) {
+      const q = playerSave?.settings?.graphicsQuality || 'high';
+      const qMult = q === 'low' ? 0.45 : q === 'medium' ? 0.75 : 1.0;
+      const targetCount = Math.max(2, Math.round(count * qMult));
       let spawned = 0;
-      for (let i = 0; i < PARTICLE_POOL_SIZE && spawned < count; i++) {
+      for (let i = 0; i < PARTICLE_POOL_SIZE && spawned < targetCount; i++) {
         const p = particles[i];
         if (!p.active) {
           p.active = true;
@@ -546,22 +554,34 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       }
     }
 
-    // Spawns high-velocity incandescent orange/amber/gold jet embers streaming out of the stern nozzles
-    const emberPalette = [0xff6b00, 0xffaa00, 0xfffbeb, 0xff4500];
+    // Spawns high-velocity deep-sea ion-cavitation & bioluminescent bubble streams out of the stern nozzles
     function spawnExhaustEmberJet(count: number = 6, speedScale: number = 26) {
+      const q = playerSave?.settings?.graphicsQuality || 'high';
+      const qMult = q === 'low' ? 0.45 : q === 'medium' ? 0.75 : 1.0;
+      const targetCount = Math.max(1, Math.round(count * qMult));
+      const shipDef =
+        SHIP_CATALOG.find((s) => s.id === playerSave.selectedShip) ||
+        SHIP_CATALOG[0];
+      const cavitationPalette = [
+        shipDef.propulsionVfxConfig.primaryColorHex,
+        shipDef.propulsionVfxConfig.secondaryColorHex,
+        shipDef.propulsionVfxConfig.emberColorHex,
+        0xe0f2fe,
+      ];
       vanguard.group.updateMatrixWorld();
       let spawned = 0;
-      for (let i = 0; i < PARTICLE_POOL_SIZE && spawned < count; i++) {
+      for (let i = 0; i < PARTICLE_POOL_SIZE && spawned < targetCount; i++) {
         const p = particles[i];
         if (!p.active) {
           p.active = true;
-          // Alternate between port and starboard stern nozzles in ship-local space
-          const sideX = (spawned % 2 === 0 ? -0.58 : 0.58) + (Math.random() - 0.5) * 0.35;
+          const sideX =
+            (spawned % 2 === 0 ? -0.58 : 0.58) + (Math.random() - 0.5) * 0.35;
           const localNozzleY = (Math.random() - 0.5) * 0.22;
-          _vec3A.set(sideX, localNozzleY, 2.05).applyMatrix4(vanguard.group.matrixWorld);
+          _vec3A
+            .set(sideX, localNozzleY, 2.05)
+            .applyMatrix4(vanguard.group.matrixWorld);
           p.pos.copy(_vec3A);
 
-          // Exhaust direction is +Z in ship local space with turbulent cone spread
           _vec3B
             .set(
               (Math.random() - 0.5) * 0.34,
@@ -576,7 +596,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           p.life = 0;
           p.maxLife = 0.24 + Math.random() * 0.28;
           p.scale = 0.55 + Math.random() * 0.95;
-          const hex = emberPalette[spawned % emberPalette.length];
+          const hex = cavitationPalette[spawned % cavitationPalette.length];
           p.colorHex = hex;
           _color.setHex(hex);
           burstInstanced.setColorAt(i, _color);
@@ -678,6 +698,83 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     sonarBeaconRing.visible = false;
     scene.add(sonarBeaconRing);
 
+    // 9c. 3D Active Ability Effects: Gravity Singularity Vortex, Arc Lightning Beams & Autonomous Drones
+    const vortexGroup = new THREE.Group();
+    const vortexRingMat = new THREE.MeshBasicMaterial({
+      color: 0x10b981,
+      transparent: true,
+      opacity: 0.78,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const vortexOuterRing = new THREE.Mesh(
+      new THREE.TorusGeometry(4.4, 0.24, 10, 32),
+      vortexRingMat,
+    );
+    const vortexInnerRing = new THREE.Mesh(
+      new THREE.TorusGeometry(2.4, 0.14, 8, 24),
+      vortexRingMat,
+    );
+    vortexInnerRing.rotation.x = Math.PI / 3;
+    const vortexCoreMat = new THREE.MeshBasicMaterial({
+      color: 0xa855f7,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const vortexCore = new THREE.Mesh(
+      new THREE.SphereGeometry(1.05, 16, 16),
+      vortexCoreMat,
+    );
+    vortexGroup.add(vortexOuterRing, vortexInnerRing, vortexCore);
+    vortexGroup.visible = false;
+    scene.add(vortexGroup);
+
+    const arcBeamMat = new THREE.MeshBasicMaterial({
+      color: 0x60a5fa,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const arcBeamGeo = new THREE.CylinderGeometry(0.11, 0.11, 1, 6);
+    const arcBeams: THREE.Mesh[] = [];
+    for (let i = 0; i < 6; i++) {
+      const bm = new THREE.Mesh(arcBeamGeo, arcBeamMat);
+      bm.visible = false;
+      scene.add(bm);
+      arcBeams.push(bm);
+    }
+
+    const repairDroneGroup = new THREE.Group();
+    const repairCore = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.45, 1),
+      mats.biolumeEmerald,
+    );
+    const repairRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.75, 0.08, 8, 20),
+      mats.biolumeEmerald,
+    );
+    repairRing.rotation.x = Math.PI / 2;
+    repairDroneGroup.add(repairCore, repairRing);
+    repairDroneGroup.visible = false;
+    scene.add(repairDroneGroup);
+
+    const attackDroneGroup = new THREE.Group();
+    const attackBody = new THREE.Mesh(
+      new THREE.ConeGeometry(0.38, 1.25, 6).rotateX(-Math.PI / 2),
+      mats.titaniumHull,
+    );
+    const attackGlow = new THREE.Mesh(
+      new THREE.TorusGeometry(0.62, 0.07, 8, 18),
+      mats.biolumeCyan,
+    );
+    attackGlow.rotation.x = Math.PI / 2;
+    attackDroneGroup.add(attackBody, attackGlow);
+    attackDroneGroup.visible = false;
+    scene.add(attackDroneGroup);
+
     // 10. Enemy Entities & Stage Leviathan Boss
     let nextEntityId = 1;
     const enemies: EnemyEntity[] = [];
@@ -714,12 +811,24 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       locked: boolean;
     } | null = null;
 
+    const sharedMaterialSet = new Set<THREE.Material>(
+      Object.values(mats) as THREE.Material[],
+    );
+
     function disposeGroupGeometries(group: THREE.Group) {
       group.traverse((obj) => {
         if ((obj as THREE.Mesh).isMesh) {
           const mesh = obj as THREE.Mesh;
           if (mesh.geometry) {
             mesh.geometry.dispose();
+          }
+          const mat = mesh.material;
+          if (Array.isArray(mat)) {
+            mat.forEach((m) => {
+              if (m && !sharedMaterialSet.has(m)) m.dispose();
+            });
+          } else if (mat && !sharedMaterialSet.has(mat)) {
+            mat.dispose();
           }
         }
       });
@@ -740,6 +849,12 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
       sonarWaveMesh.visible = false;
       sonarBeaconRing.visible = false;
+      vortexGroup.visible = false;
+      repairDroneGroup.visible = false;
+      attackDroneGroup.visible = false;
+      arcBeams.forEach((b) => {
+        b.visible = false;
+      });
 
       projectiles.forEach((p) => {
         p.active = false;
@@ -858,6 +973,8 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       hazardWarningText: null as string | null,
       upgrades: [] as UpgradeId[],
       shipSpeedMult: 1,
+      shipAccelMult: 1,
+      shipTurnRateMult: 1,
       shipPrimaryDmgMult: 1,
       shipPrimaryFireRateMult: 1,
       shipPrimarySpeed: 108,
@@ -866,6 +983,24 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       shipSecondarySpeed: 82,
       shipSonarDurationBonus: 0,
       shipPressureResistBonus: 0,
+      shipAbilityStrengthMult: 1,
+      activeShipId: 'vanguard_interceptor' as ShipClassId,
+      shipRarity: 'Standard' as ShipRarity,
+      shipRoleTitle: 'Recon Fighter',
+      activeAbilityId: 'resonance_scan' as ShipActiveAbilityId,
+      activeAbilityName: 'Resonance Scan',
+      activeAbilityDuration: 6,
+      activeAbilityCooldownMax: 10,
+      activeAbilityTimer: 0,
+      activeAbilityCooldown: 0,
+      shotSequenceCount: 0,
+      wingTurretFireTimer: 0,
+      droneFireTimer: 0,
+      droneHealTimer: 0,
+      vortexActiveTimer: 0,
+      vortexPos: new THREE.Vector3(0, 0, -28),
+      arcLightningTimer: 0,
+      markedTargetId: null as number | null,
       ambientLightPct: 100,
       ambientColorHex: '#38bdf8',
       keyLightIntensity: 2.4,
@@ -1292,6 +1427,16 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       sim.sonarWeakPointSlot = null;
       sim.sonarHazardsCount = 0;
       sim.lockedTargetIds = [];
+      sim.activeAbilityTimer = 0;
+      sim.activeAbilityCooldown = 0;
+      sim.shotSequenceCount = 0;
+      sim.wingTurretFireTimer = 0;
+      sim.droneFireTimer = 0;
+      sim.droneHealTimer = 0;
+      sim.vortexActiveTimer = 0;
+      sim.arcLightningTimer = 0;
+      sim.markedTargetId = null;
+      vanguard.setAbilityVisualState(false);
       sim.hazardWarningText = null;
       sim.hullStress = 0;
       sim.maxHullStressReached = 0;
@@ -1374,15 +1519,38 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           : 0);
 
       sim.shipSpeedMult = ship.baseSpeed / 22;
+      sim.shipAccelMult = ship.accelerationMult || 1.0;
+      sim.shipTurnRateMult = ship.turnRateMult || 1.0;
       sim.shipPrimaryDmgMult = ship.cannonDamageMult * (priWpn.damage / 24);
       sim.shipPrimaryFireRateMult =
         ship.fireRateMult * (0.12 / Math.max(0.05, priWpn.cooldownSeconds));
       sim.shipPrimarySpeed = priWpn.projectileSpeed;
-      sim.shipSecondaryDmgMult = secWpn.damage / 88;
-      sim.shipSecondaryCooldown = secWpn.cooldownSeconds;
+      sim.shipSecondaryDmgMult =
+        (ship.secondaryDamageMult || 1.0) * (secWpn.damage / 88);
+      sim.shipSecondaryCooldown =
+        secWpn.cooldownSeconds * (ship.torpedoCooldownMult || 1.0);
       sim.shipSecondarySpeed = secWpn.projectileSpeed;
       sim.shipSonarDurationBonus = ship.sonarDurationBonus;
       sim.shipPressureResistBonus = ship.pressureResistancePct / 100;
+      sim.shipAbilityStrengthMult = ship.abilityStrengthMult || 1.0;
+      sim.activeShipId = ship.id;
+      sim.shipRarity = ship.rarity;
+      sim.shipRoleTitle = ship.roleTitle;
+      sim.activeAbilityId = ship.activeAbility.id;
+      sim.activeAbilityName = ship.activeAbility.name;
+      sim.activeAbilityDuration = ship.activeAbility.durationSeconds;
+      sim.activeAbilityCooldownMax = ship.activeAbility.cooldownSeconds;
+
+      soundEngine.setShipAudioProfile(ship.audioProfile);
+      for (let i = 0; i < 66; i++) {
+        applyPlayerWeaponVfxToMesh(
+          projectiles[i].mesh as THREE.Group,
+          ship.weaponVfxConfig,
+          i >= 50,
+          playerSave.equippedPrimaryWeapon,
+          playerSave.equippedSecondaryWeapon,
+        );
+      }
 
       sim.hull = Math.min(sim.maxHull, sim.hull);
       sim.shield = Math.min(sim.maxShield, sim.shield);
@@ -1528,6 +1696,10 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     function buyShip(shipId: ShipClassId) {
       const def = SHIP_CATALOG.find((s) => s.id === shipId);
       if (!def || playerSave.ownedShips.includes(shipId)) return;
+      if (!isShipMissionUnlocked(def, playerSave)) {
+        soundEngine.playSonarPing(320);
+        return;
+      }
       if (
         playerSave.salvageCredits < def.costCredits ||
         playerSave.abyssalMaterials < def.costMaterials
@@ -1733,13 +1905,301 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       syncHudSnapshot();
     }
 
+    function orientArcBeam(
+      beam: THREE.Mesh,
+      fromPos: THREE.Vector3,
+      toPos: THREE.Vector3,
+    ) {
+      const dist = Math.max(0.2, fromPos.distanceTo(toPos));
+      beam.position.copy(fromPos).lerp(toPos, 0.5);
+      beam.scale.set(1, dist, 1);
+      beam.quaternion.setFromUnitVectors(
+        _vec3B.set(0, 1, 0),
+        _vec3C.subVectors(toPos, fromPos).normalize(),
+      );
+      beam.visible = true;
+    }
+
+    function executeShipAbility() {
+      if (modeRef.current !== 'playing') return;
+      if (sim.activeAbilityCooldown > 0 || sim.activeAbilityTimer > 0) return;
+
+      const ship =
+        SHIP_CATALOG.find((s) => s.id === playerSave.selectedShip) ||
+        SHIP_CATALOG[0];
+
+      sim.activeAbilityTimer = ship.activeAbility.durationSeconds;
+      sim.activeAbilityCooldown = ship.activeAbility.cooldownSeconds;
+      vanguard.setAbilityVisualState(true);
+      soundEngine.playShipAbility(ship.audioProfile.abilityFreq);
+      triggerHaptic([18, 22, 32]);
+      spawnParticleBurst(
+        vanguard.group.position,
+        ship.propulsionVfxConfig.primaryColorHex,
+        24,
+        18,
+      );
+
+      switch (ship.activeAbility.id) {
+        case 'resonance_scan': {
+          sim.sonarActiveTimer = Math.max(
+            sim.sonarActiveTimer,
+            ship.activeAbility.durationSeconds,
+          );
+          sim.sonarWaveTimer = 0.85;
+          sonarWaveMesh.position.copy(vanguard.group.position);
+          sonarWaveMesh.scale.setScalar(1.8);
+          sonarWaveMat.opacity = 0.78;
+          sonarWaveMesh.visible = true;
+          if (bossObj && bossObj.active) {
+            sim.sonarWeakPointSlot = pickBestBossSonarWeakPoint();
+          }
+          break;
+        }
+        case 'riptide_overdrive': {
+          thrusterSurgeTimer = 1.45;
+          spawnExhaustEmberJet(16, 28);
+          break;
+        }
+        case 'phantom_sonar': {
+          sim.sonarActiveTimer = Math.max(
+            sim.sonarActiveTimer,
+            ship.activeAbility.durationSeconds + sim.shipSonarDurationBonus,
+          );
+          sim.sonarWaveTimer = 0.85;
+          sonarWaveMesh.position.copy(vanguard.group.position);
+          sonarWaveMesh.scale.setScalar(1.8);
+          sonarWaveMat.opacity = 0.72;
+          sonarWaveMesh.visible = true;
+          projectiles.forEach((p) => {
+            if (p.active && !p.isPlayer) {
+              p.vel.multiplyScalar(0.45);
+            }
+          });
+          if (bossObj && bossObj.active) {
+            sim.sonarWeakPointSlot = pickBestBossSonarWeakPoint();
+          }
+          break;
+        }
+        case 'aegis_pulse': {
+          sim.hullStress = 0;
+          sim.shield = Math.min(sim.maxShield, sim.shield + 22);
+          (
+            vanguard.shieldSphere.material as THREE.MeshBasicMaterial
+          ).opacity = 0.85;
+          break;
+        }
+        case 'predator_mark': {
+          let weakestId: number | null = null;
+          let lowestRatio = 2.0;
+          enemies.forEach((e) => {
+            if (e.active) {
+              const r = e.hp / Math.max(1, e.maxHp);
+              if (r < lowestRatio) {
+                lowestRatio = r;
+                weakestId = e.id;
+              }
+            }
+          });
+          if (bossObj && bossObj.active) {
+            bossObj.appendages.forEach((app) => {
+              if (!app.destroyed) {
+                const r = app.hp / Math.max(1, app.maxHp);
+                if (r <= lowestRatio) {
+                  lowestRatio = r;
+                  weakestId = app.numericId;
+                }
+              }
+            });
+            if (weakestId === null) weakestId = bossObj.id;
+          }
+          sim.markedTargetId = weakestId;
+          if (weakestId !== null && !sim.lockedTargetIds.includes(weakestId)) {
+            if (sim.lockedTargetIds.length >= sim.maxLocks) {
+              sim.lockedTargetIds.shift();
+            }
+            sim.lockedTargetIds.push(weakestId);
+          }
+          break;
+        }
+        case 'arc_storm': {
+          const arcTargets: { pos: THREE.Vector3; enemy?: EnemyEntity; app?: BossAppendageRuntime }[] = [];
+          enemies.forEach((e) => {
+            if (e.active && arcTargets.length < 5) {
+              arcTargets.push({ pos: e.group.position, enemy: e });
+            }
+          });
+          if (bossObj && bossObj.active && arcTargets.length < 5) {
+            bossObj.appendages.forEach((app) => {
+              if (!app.destroyed && arcTargets.length < 5) {
+                arcTargets.push({ pos: app.worldPos, app });
+              }
+            });
+          }
+          const shockDmg = Math.round(58 * sim.shipPrimaryDmgMult);
+          let prevPos = vanguard.group.position.clone();
+          arcBeams.forEach((b) => {
+            b.visible = false;
+          });
+          arcTargets.forEach((tgt, idx) => {
+            if (idx < arcBeams.length) {
+              orientArcBeam(arcBeams[idx], prevPos, tgt.pos);
+              prevPos = tgt.pos.clone();
+            }
+            spawnParticleBurst(tgt.pos, 0x818cf8, 12, 16);
+            if (tgt.enemy) {
+              tgt.enemy.hp -= shockDmg;
+              tgt.enemy.isFiringWindup = false;
+              (tgt.enemy.telegraphRing.material as THREE.MeshBasicMaterial).opacity = 0;
+              tgt.enemy.hitFlashTimer = 0.14;
+            } else if (tgt.app && bossObj) {
+              tgt.app.hp = Math.max(0, tgt.app.hp - shockDmg);
+              bossObj.hp = Math.max(1, bossObj.hp - shockDmg * 0.55);
+              tgt.app.hitFlashTimer = 0.14;
+            }
+          });
+          sim.arcLightningTimer = 0.45;
+          arcBeamMat.color.setHex(0x818cf8);
+          arcBeamMat.opacity = 0.95;
+          break;
+        }
+        case 'phase_slip': {
+          sim.boost = sim.maxBoost;
+          projectiles.forEach((p) => {
+            if (
+              p.active &&
+              !p.isPlayer &&
+              p.pos.distanceTo(vanguard.group.position) < 20
+            ) {
+              p.active = false;
+              p.mesh.visible = false;
+              spawnParticleBurst(p.pos, 0x2dd4bf, 5, 10);
+            }
+          });
+          break;
+        }
+        case 'seismic_lock': {
+          sim.cameraShake = Math.min(
+            1,
+            sim.cameraShake + 0.35 * (playerSave.settings.cameraShakeIntensity / 100),
+          );
+          if (bossObj && bossObj.active) {
+            sim.sonarWeakPointSlot = pickBestBossSonarWeakPoint();
+          }
+          break;
+        }
+        case 'guardian_swarm': {
+          sim.droneFireTimer = 0.2;
+          sim.droneHealTimer = 0.5;
+          repairDroneGroup.visible = true;
+          attackDroneGroup.visible = true;
+          break;
+        }
+        case 'gravitic_harpoon': {
+          sim.vortexActiveTimer = ship.activeAbility.durationSeconds;
+          sim.vortexPos.set(sim.playerX, sim.playerY, -28);
+          vortexGroup.position.copy(sim.vortexPos);
+          vortexRingMat.color.setHex(0x10b981);
+          vortexCoreMat.color.setHex(0xd97706);
+          vortexGroup.visible = true;
+          break;
+        }
+        case 'sovereign_barrage': {
+          const barrageTargets: number[] = [];
+          if (bossObj && bossObj.active) {
+            bossObj.appendages.forEach((app) => {
+              if (!app.destroyed && barrageTargets.length < 3) {
+                barrageTargets.push(app.numericId);
+              }
+            });
+            if (barrageTargets.length < 3) barrageTargets.push(bossObj.id);
+          }
+          enemies.forEach((e) => {
+            if (e.active && barrageTargets.length < 3) {
+              barrageTargets.push(e.id);
+            }
+          });
+          const freeDmg = Math.round(98 * sim.shipSecondaryDmgMult * 1.12);
+          let fired = 0;
+          for (let k = 0; k < 6; k++) {
+            for (let i = 50; i < 66; i++) {
+              const p = projectiles[i];
+              if (!p.active) {
+                p.active = true;
+                p.isPlayer = true;
+                p.isTorpedo = true;
+                const spreadX = (k - 2.5) * 0.7;
+                p.pos.set(
+                  vanguard.group.position.x + spreadX,
+                  vanguard.group.position.y + 0.2,
+                  vanguard.group.position.z - 0.6,
+                );
+                p.vel.set(spreadX * 5, 5 + (k % 2) * 3, -sim.shipSecondarySpeed * 0.85);
+                p.targetEnemyId =
+                  barrageTargets.length > 0
+                    ? barrageTargets[k % barrageTargets.length]
+                    : null;
+                p.damage = freeDmg;
+                p.life = 3.2;
+                p.mesh.position.copy(p.pos);
+                p.mesh.visible = true;
+                fired++;
+                break;
+              }
+            }
+          }
+          if (fired > 0) {
+            soundEngine.playTorpedoLaunch(fired);
+          }
+          break;
+        }
+        case 'pelagic_singularity': {
+          sim.vortexActiveTimer = ship.activeAbility.durationSeconds;
+          sim.vortexPos.set(sim.playerX, sim.playerY, -32);
+          vortexGroup.position.copy(sim.vortexPos);
+          vortexRingMat.color.setHex(0x22d3ee);
+          vortexCoreMat.color.setHex(0xfbbf24);
+          vortexGroup.visible = true;
+          sim.shield = Math.min(
+            sim.maxShield,
+            sim.shield + Math.round(sim.maxShield * 0.18),
+          );
+          if (bossObj && bossObj.active) {
+            sim.sonarWeakPointSlot = pickBestBossSonarWeakPoint();
+          }
+          projectiles.forEach((p) => {
+            if (
+              p.active &&
+              !p.isPlayer &&
+              p.pos.distanceTo(vanguard.group.position) < 28
+            ) {
+              p.active = false;
+              p.mesh.visible = false;
+              spawnParticleBurst(p.pos, 0x22d3ee, 5, 10);
+            }
+          });
+          break;
+        }
+      }
+
+      syncHudSnapshot();
+    }
+
     function executeBarrelRoll() {
       const rollCost = sim.upgrades.includes('hydro_thruster_coil') ? 20 : 26;
       if (sim.barrelRollTimer <= 0 && sim.boost >= rollCost) {
         sim.boost -= rollCost;
-        sim.barrelRollTimer = sim.upgrades.includes('hydro_thruster_coil')
+        const baseRollDur = sim.upgrades.includes('hydro_thruster_coil')
           ? 0.56
           : 0.45;
+        // Distinctive per-ship defensive maneuver bonuses (Phase 7)
+        const shipEvadeBonus =
+          sim.activeShipId === 'rift_manta'
+            ? 1.22
+            : sim.activeShipId === 'echo_tactical'
+              ? 1.16
+              : 1.0;
+        sim.barrelRollTimer = baseRollDur * shipEvadeBonus;
         sim.rollsExecutedThisSortie += 1;
         sim.barrelRollDir =
           heldKeys.has('KeyA') || heldKeys.has('ArrowLeft') || touchMoveX < -0.2
@@ -1749,21 +2209,44 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                 touchMoveX > 0.2
               ? -1
               : 1;
+
+        const shipDef =
+          SHIP_CATALOG.find((s) => s.id === sim.activeShipId) || SHIP_CATALOG[0];
         soundEngine.playBarrelRoll();
         triggerHaptic(18);
-        spawnParticleBurst(vanguard.group.position, 0x38bdf8, 16, 14);
+        spawnParticleBurst(
+          vanguard.group.position,
+          shipDef.propulsionVfxConfig.primaryColorHex,
+          18,
+          15,
+        );
 
-        // If Voltaic Shield Capacitor upgrade is active, EMP clear nearby enemy plasma bolts
-        if (sim.upgrades.includes('voltaic_shield_capacitor')) {
+        // Bathys-Bastion IV Fortress Shield-Barge roll restores +5 shield
+        if (sim.activeShipId === 'aegis_guardian') {
+          sim.shield = Math.min(sim.maxShield, sim.shield + 5);
+        }
+
+        // If Voltaic Shield Capacitor upgrade is active OR piloting Tempest Corsair, EMP clear nearby enemy plasma bolts
+        const empRadius = sim.upgrades.includes('voltaic_shield_capacitor')
+          ? 24
+          : sim.activeShipId === 'tempest_corsair'
+            ? 18
+            : 0;
+        if (empRadius > 0) {
           projectiles.forEach((p) => {
             if (
               p.active &&
               !p.isPlayer &&
-              p.pos.distanceTo(vanguard.group.position) < 24
+              p.pos.distanceTo(vanguard.group.position) < empRadius
             ) {
               p.active = false;
               p.mesh.visible = false;
-              spawnParticleBurst(p.pos, 0xa855f7, 6, 10);
+              spawnParticleBurst(
+                p.pos,
+                shipDef.propulsionVfxConfig.secondaryColorHex,
+                6,
+                10,
+              );
             }
           });
         }
@@ -1771,19 +2254,37 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     }
 
     function firePrimaryCannons() {
+      sim.shotSequenceCount += 1;
       const overcharged = sim.upgrades.includes('cavitation_overcharge');
       const overchargeMult = 1 + 0.35 * getModuleTierMult('cavitation_overcharge');
+      const sovereignPassive = sim.activeShipId === 'abyssal_sovereign' ? 1.12 : 1.0;
       const boltSpeed = sim.shipPrimarySpeed * (overcharged ? 1.15 : 1);
       const boltDamage = Math.round(
-        24 * sim.shipPrimaryDmgMult * (overcharged ? overchargeMult : 1),
+        24 *
+          sim.shipPrimaryDmgMult *
+          sovereignPassive *
+          (overcharged ? overchargeMult : 1),
       );
 
       // Aim point in world space (-65 units ahead along reticle vector)
       _vec3C.set(sim.aimX * 26, sim.aimY * 16, -65);
 
-      const offsets = [-1.85, 1.85];
+      const allMuzzles = vanguard.getPrimaryMuzzleOffsets();
+      // Select active muzzles for this volley (all 4 on Maelstrom every 2nd shot or Reaper every 3rd shot, or 2 primary barrels otherwise)
+      const useAllMounts =
+        allMuzzles.length <= 2 ||
+        (sim.activeShipId === 'leviathan_assault' && sim.shotSequenceCount % 2 === 0) ||
+        (sim.activeShipId === 'kraken_reaper' && sim.shotSequenceCount % 3 === 0) ||
+        (sim.activeShipId === 'abyssal_sovereign' && sim.shotSequenceCount % 2 === 0) ||
+        (sim.activeShipId === 'pelagic_ascendant' && sim.shotSequenceCount % 2 === 0);
+
+      const activeMuzzles = useAllMounts ? allMuzzles : allMuzzles.slice(0, 2);
+      const perBoltDamage =
+        activeMuzzles.length > 2 ? Math.round(boltDamage * 0.68) : boltDamage;
+
       let firedAny = false;
-      offsets.forEach((ox) => {
+      let firedCount = 0;
+      activeMuzzles.forEach((muzzleLocal) => {
         for (let i = 0; i < 50; i++) {
           const p = projectiles[i];
           if (!p.active) {
@@ -1791,26 +2292,58 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             p.isPlayer = true;
             p.isTorpedo = false;
             p.pos.set(
-              vanguard.group.position.x + ox,
-              vanguard.group.position.y - 0.1,
-              vanguard.group.position.z - 1.2,
+              vanguard.group.position.x + muzzleLocal.x,
+              vanguard.group.position.y + muzzleLocal.y,
+              vanguard.group.position.z + muzzleLocal.z,
             );
             _vec3B.subVectors(_vec3C, p.pos).normalize();
             p.vel.copy(_vec3B).multiplyScalar(boltSpeed);
-            p.damage = boltDamage;
+            p.damage = perBoltDamage;
             p.life = 1.6;
             p.targetEnemyId = null;
             p.mesh.position.copy(p.pos);
             p.mesh.lookAt(_vec3C);
             p.mesh.visible = true;
             firedAny = true;
+            firedCount++;
             break;
           }
         }
       });
 
+      // Tempest Corsair passive: every 4th primary volley arcs lightning to nearest active hostile
+      if (
+        sim.activeShipId === 'tempest_corsair' &&
+        sim.shotSequenceCount % 4 === 0
+      ) {
+        const nearestEnemy = enemies.find((e) => e.active);
+        if (nearestEnemy) {
+          nearestEnemy.hp -= Math.round(boltDamage * 0.9);
+          nearestEnemy.hitFlashTimer = 0.12;
+          orientArcBeam(
+            arcBeams[0],
+            vanguard.group.position,
+            nearestEnemy.group.position,
+          );
+          arcBeamMat.color.setHex(0x6366f1);
+          arcBeamMat.opacity = 0.88;
+          sim.arcLightningTimer = 0.22;
+          spawnParticleBurst(nearestEnemy.group.position, 0x818cf8, 8, 12);
+        } else if (bossObj && bossObj.active) {
+          const app = bossObj.appendages.find((a) => !a.destroyed);
+          if (app) {
+            app.hp = Math.max(0, app.hp - Math.round(boltDamage * 0.9));
+            app.hitFlashTimer = 0.12;
+            orientArcBeam(arcBeams[0], vanguard.group.position, app.worldPos);
+            arcBeamMat.color.setHex(0x6366f1);
+            arcBeamMat.opacity = 0.88;
+            sim.arcLightningTimer = 0.22;
+          }
+        }
+      }
+
       if (firedAny) {
-        sim.shotsFired += 2;
+        sim.shotsFired += firedCount;
         vanguard.triggerWeaponFire(false);
         soundEngine.playLaserShot(overcharged);
       }
@@ -1844,7 +2377,13 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
       let launched = 0;
       const baseTorpDmg = sim.upgrades.includes('quad_torpedo_salvo') ? 105 : 88;
-      const torpDamage = Math.round(baseTorpDmg * sim.shipSecondaryDmgMult);
+      const sovereignPassive = sim.activeShipId === 'abyssal_sovereign' ? 1.12 : 1.0;
+      const torpDamage = Math.round(
+        baseTorpDmg * sim.shipSecondaryDmgMult * sovereignPassive,
+      );
+      const secMuzzles = vanguard.getSecondaryMuzzleOffsets();
+      const shipDef =
+        SHIP_CATALOG.find((s) => s.id === sim.activeShipId) || SHIP_CATALOG[0];
 
       sim.lockedTargetIds.forEach((targetId, idx) => {
         for (let i = 50; i < 66; i++) {
@@ -1853,13 +2392,18 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             p.active = true;
             p.isPlayer = true;
             p.isTorpedo = true;
-            const side = idx % 2 === 0 ? -1.2 : 1.2;
+            const muzzle = secMuzzles[idx % secMuzzles.length];
+            const sideSign = muzzle ? Math.sign(muzzle.x) || 1 : idx % 2 === 0 ? -1 : 1;
             p.pos.set(
-              vanguard.group.position.x + side,
-              vanguard.group.position.y - 0.35,
-              vanguard.group.position.z - 0.8,
+              vanguard.group.position.x + (muzzle ? muzzle.x : sideSign * 1.2),
+              vanguard.group.position.y + (muzzle ? muzzle.y : -0.35),
+              vanguard.group.position.z + (muzzle ? muzzle.z : -0.8),
             );
-            p.vel.set(side * 6, 4 + (idx % 3) * 2, -sim.shipSecondarySpeed * 0.72);
+            p.vel.set(
+              sideSign * 6.5,
+              3.5 + (idx % 3) * 2,
+              -sim.shipSecondarySpeed * 0.74,
+            );
             p.targetEnemyId = targetId;
             p.damage = torpDamage;
             p.life = 3.2;
@@ -1875,7 +2419,12 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         sim.shotsFired += launched;
         playerSave.stats.totalTorpedoesFired += launched;
         vanguard.triggerWeaponFire(true);
-        spawnParticleBurst(vanguard.group.position, 0xff7b00, 14, 16);
+        spawnParticleBurst(
+          vanguard.group.position,
+          shipDef.weaponVfxConfig.torpedoColorHex,
+          16,
+          16,
+        );
         const salvoReloadFactor = sim.upgrades.includes('quad_torpedo_salvo')
           ? Math.max(0.55, 1 - 0.22 * getModuleTierMult('quad_torpedo_salvo'))
           : 1;
@@ -1923,15 +2472,29 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     }
 
     function damagePlayer(rawAmount: number) {
-      if (sim.barrelRollTimer > 0) {
-        // Deflected by hydro-barrel roll i-frames!
+      if (
+        sim.barrelRollTimer > 0 ||
+        (sim.activeAbilityId === 'phase_slip' && sim.activeAbilityTimer > 0)
+      ) {
+        // Deflected by hydro-barrel roll or Phase Slip invulnerability!
         soundEngine.playSonarPing(960);
         return;
       }
 
       const diffMult =
         DIFFICULTY_CONFIGS[playerSave.selectedDifficulty].enemyDamageMult;
-      const amount = Math.max(1, Math.round(rawAmount * diffMult));
+      const bastionPassiveMult =
+        sim.activeShipId === 'aegis_guardian' ? 0.88 : 1.0;
+      const aegisActiveMult =
+        sim.activeAbilityId === 'aegis_pulse' && sim.activeAbilityTimer > 0
+          ? 0.5
+          : 1.0;
+      const amount = Math.max(
+        1,
+        Math.round(
+          rawAmount * diffMult * bastionPassiveMult * aegisActiveMult,
+        ),
+      );
 
       sim.shieldRegenDelay = 3.2;
       sim.cameraShake = Math.min(
@@ -1959,6 +2522,17 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       sim.multiplier = 1;
 
       if (sim.hull <= 0) {
+        // Flight State #8: High-pressure underwater cavitation implosion shockwave on ship destruction
+        const shipDef =
+          SHIP_CATALOG.find((s) => s.id === sim.activeShipId) || SHIP_CATALOG[0];
+        spawnParticleBurst(
+          vanguard.group.position,
+          shipDef.propulsionVfxConfig.primaryColorHex,
+          42,
+          28,
+        );
+        spawnParticleBurst(vanguard.group.position, 0xe0f2fe, 28, 18);
+        soundEngine.playImpact(true);
         finalizeSortie(false);
         syncHudSnapshot('game_over');
       }
@@ -2055,6 +2629,23 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         sonarWeakPointSlot: sonarActive ? sim.sonarWeakPointSlot : null,
         sonarHazardsCount: sonarActive ? sim.sonarHazardsCount : 0,
         barrelRolling: sim.barrelRollTimer > 0,
+        shipRarity: sim.shipRarity,
+        shipRoleTitle: sim.shipRoleTitle,
+        activeAbilityName: sim.activeAbilityName,
+        activeAbilityActive: sim.activeAbilityTimer > 0,
+        activeAbilityRemainingSeconds: Math.max(0, sim.activeAbilityTimer),
+        activeAbilityCooldown: Math.max(
+          0,
+          Math.min(
+            1,
+            sim.activeAbilityCooldown / Math.max(1, sim.activeAbilityCooldownMax),
+          ),
+        ),
+        activeAbilityCooldownSeconds: Math.ceil(sim.activeAbilityCooldown),
+        activeDronesCount:
+          sim.activeAbilityId === 'guardian_swarm' && sim.activeAbilityTimer > 0
+            ? 2
+            : 0,
         bossActive: Boolean(bossObj && bossObj.active),
         bossName: cfg.bossName,
         bossSubtitle: cfg.bossSubtitle,
@@ -2154,6 +2745,8 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       const cosmetic =
         COSMETIC_CATALOG.find((c) => c.id === targetCosmeticId) ||
         COSMETIC_CATALOG[0];
+      const shipDef =
+        SHIP_CATALOG.find((s) => s.id === shipId) || SHIP_CATALOG[0];
       const changed =
         shipId !== lastPreviewedShipId ||
         targetCosmeticId !== lastPreviewedCosmeticId;
@@ -2161,12 +2754,36 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       vanguard.setAppearance(shipId, cosmetic.trimColorHex, {
         primaryWeaponId: playerSave.equippedPrimaryWeapon,
         secondaryWeaponId: playerSave.equippedSecondaryWeapon,
-        activeUpgrades: playerSave.activeUpgrades,
+        activeUpgrades: playerSave.activeUpgrades.slice(0, shipDef.moduleCapacity),
         upgradeTiers: playerSave.upgradeTiers,
         pilotLevel: playerSave.pilotLevel,
       });
-      dockRingInnerMat.color.setHex(cosmetic.trimColorHex);
-      shipPointLight.color.setHex(cosmetic.trimColorHex);
+
+      // Mythic & Apex Berth Presentation for Tiers 8 to 12: Golden-Cyan Dock Ring Aura & Volumetric Floodlights
+      const isPrestigeTier = (shipDef.tier || 1) >= 8;
+      if (isPrestigeTier) {
+        dockRingInnerMat.color.setHex(
+          shipDef.tier === 12
+            ? 0x22d3ee
+            : shipDef.propulsionVfxConfig.primaryColorHex,
+        );
+        dockRingInnerMat.opacity = 0.65;
+        dockRingOuterMat.color.setHex(0xfbbf24);
+        dockRingOuterMat.opacity = 0.48;
+        volumetricConeMat.color.setHex(
+          shipDef.tier === 12 ? 0xfbbf24 : 0x22d3ee,
+        );
+        volumetricConeMat.opacity = 0.095;
+        shipPointLight.color.setHex(0xfef08a);
+      } else {
+        dockRingInnerMat.color.setHex(cosmetic.trimColorHex);
+        dockRingInnerMat.opacity = 0.42;
+        dockRingOuterMat.color.setHex(0x38bdf8);
+        dockRingOuterMat.opacity = 0.2;
+        volumetricConeMat.color.setHex(0x38bdf8);
+        volumetricConeMat.opacity = 0.055;
+        shipPointLight.color.setHex(cosmetic.trimColorHex);
+      }
 
       if (changed) {
         lastPreviewedShipId = shipId;
@@ -2176,14 +2793,14 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         vanguard.group.scale.setScalar(0.86);
         const shieldMat = vanguard.shieldSphere
           .material as THREE.MeshBasicMaterial;
-        shieldMat.opacity = 0.52;
+        shieldMat.opacity = isPrestigeTier ? 0.68 : 0.52;
         spawnParticleBurst(
           vanguard.group.position,
-          cosmetic.trimColorHex,
-          22,
+          isPrestigeTier ? 0xfbbf24 : cosmetic.trimColorHex,
+          isPrestigeTier ? 28 : 22,
           14,
         );
-        soundEngine.playSonarPing(820);
+        soundEngine.playSonarPing(isPrestigeTier ? 960 : 820);
       }
     }
 
@@ -2225,6 +2842,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       triggerBarrelRoll: executeBarrelRoll,
       triggerTorpedoSalvo: launchTorpedoSalvo,
       triggerTacticalSonar: executeTacticalSonar,
+      triggerShipAbility: executeShipAbility,
       focusBossAppendage,
       summonBossNow,
     });
@@ -2331,6 +2949,9 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       } else if (e.code === 'KeyQ' || e.code === 'KeyF') {
         e.preventDefault();
         executeTacticalSonar();
+      } else if (e.code === 'KeyR' || e.code === 'KeyG') {
+        e.preventDefault();
+        executeShipAbility();
       } else if (e.code === 'KeyC') {
         onToggleCameraRef.current();
       }
@@ -2623,9 +3244,58 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           igniteBoost = 1.0 + (thrusterSurgeTimer / 0.6) * 1.6;
         }
       }
+      const moveEffort =
+        currentMode === 'playing'
+          ? Math.min(1, Math.hypot(sim.playerVelX, sim.playerVelY) / 26)
+          : 0;
       const surgeBoost =
-        sim.barrelRollTimer > 0 ? 2.4 : igniteBoost;
-      vanguard.updateShipEffects(elapsed, dt, surgeBoost);
+        sim.barrelRollTimer > 0
+          ? 2.45
+          : sim.activeAbilityId === 'riptide_overdrive' &&
+              sim.activeAbilityTimer > 0
+            ? 2.3
+            : thrusterSurgeTimer > 0
+              ? igniteBoost
+              : currentMode === 'playing'
+                ? 0.92 + moveEffort * 0.52
+                : 0.78;
+      const steerNormalized =
+        currentMode === 'playing'
+          ? THREE.MathUtils.clamp(sim.playerVelX / 24, -1, 1)
+          : 0;
+      const lowHullDamageRatio =
+        currentMode === 'playing'
+          ? THREE.MathUtils.clamp(
+              1 - sim.hull / Math.max(1, sim.maxHull * 0.55),
+              0,
+              1,
+            )
+          : 0;
+      vanguard.setAbilityVisualState(
+        currentMode === 'playing' && sim.activeAbilityTimer > 0,
+      );
+      vanguard.updateShipEffects(
+        elapsed,
+        dt,
+        surgeBoost,
+        steerNormalized,
+        lowHullDamageRatio,
+        sim.barrelRollTimer > 0,
+      );
+
+      // Phase 11 Damage Animation: Minor electrical discharge & cavitation bubble leakage when hull is low
+      if (
+        currentMode === 'playing' &&
+        lowHullDamageRatio > 0.25 &&
+        Math.random() < lowHullDamageRatio * 0.24
+      ) {
+        spawnParticleBurst(
+          vanguard.group.position,
+          Math.random() > 0.45 ? 0x38bdf8 : 0xfbbf24,
+          3,
+          10,
+        );
+      }
 
       const shieldMat = vanguard.shieldSphere
         .material as THREE.MeshBasicMaterial;
@@ -3068,17 +3738,23 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         const baseSpeed = sim.upgrades.includes('hydro_thruster_coil')
           ? 27
           : 22;
-        const speedMult = baseSpeed * sim.shipSpeedMult;
+        const overdriveSpeedMult =
+          sim.activeAbilityId === 'riptide_overdrive' &&
+          sim.activeAbilityTimer > 0
+            ? 1.35
+            : 1.0;
+        const speedMult = baseSpeed * sim.shipSpeedMult * overdriveSpeedMult;
+        const accelDamp = 9 * sim.shipAccelMult;
         sim.playerVelX = THREE.MathUtils.damp(
           sim.playerVelX,
           moveX * speedMult,
-          9,
+          accelDamp,
           dt,
         );
         sim.playerVelY = THREE.MathUtils.damp(
           sim.playerVelY,
           moveY * speedMult,
-          9,
+          accelDamp,
           dt,
         );
 
@@ -3104,16 +3780,17 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           sim.barrelRollTimer -= dt;
           sim.rollAngle += sim.barrelRollDir * dt * Math.PI * 4.6;
         } else {
-          const targetRoll = -sim.playerVelX * 0.032;
+          const targetRoll = -sim.playerVelX * 0.032 * sim.shipTurnRateMult;
           sim.rollAngle = THREE.MathUtils.damp(
             sim.rollAngle,
             targetRoll,
-            10,
+            10 * sim.shipTurnRateMult,
             dt,
           );
         }
 
-        const targetPitch = sim.playerVelY * 0.024 + sim.aimY * 0.18;
+        const targetPitch =
+          (sim.playerVelY * 0.024 + sim.aimY * 0.18) * sim.shipTurnRateMult;
         const targetYaw = -sim.playerVelX * 0.015 - sim.aimX * 0.22;
         sim.pitchAngle = THREE.MathUtils.damp(
           sim.pitchAngle,
@@ -3140,9 +3817,10 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         if (sim.shieldRegenDelay > 0) {
           sim.shieldRegenDelay -= dt;
         } else {
-          const shieldRegen = sim.upgrades.includes('voltaic_shield_capacitor')
-            ? 12
-            : 8;
+          const wardenBonus = sim.activeShipId === 'trench_warden' ? 4 : 0;
+          const shieldRegen =
+            (sim.upgrades.includes('voltaic_shield_capacitor') ? 12 : 8) +
+            wardenBonus;
           sim.shield = Math.min(sim.maxShield, sim.shield + shieldRegen * dt);
         }
 
@@ -3152,6 +3830,173 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
         if (sim.sonarCooldown > 0) {
           sim.sonarCooldown = Math.max(0, sim.sonarCooldown - dt);
+        }
+
+        if (sim.activeAbilityTimer > 0) {
+          sim.activeAbilityTimer = Math.max(0, sim.activeAbilityTimer - dt);
+          if (sim.activeAbilityTimer <= 0) {
+            sim.markedTargetId = null;
+          }
+        }
+        if (sim.activeAbilityCooldown > 0) {
+          sim.activeAbilityCooldown = Math.max(
+            0,
+            sim.activeAbilityCooldown - dt,
+          );
+        }
+
+        // Update Arc Lightning Fade
+        if (sim.arcLightningTimer > 0) {
+          sim.arcLightningTimer = Math.max(0, sim.arcLightningTimer - dt);
+          arcBeamMat.opacity = Math.min(1, sim.arcLightningTimer / 0.25);
+          if (sim.arcLightningTimer <= 0) {
+            arcBeams.forEach((b) => {
+              b.visible = false;
+            });
+          }
+        }
+
+        // Update 3D Gravity Singularity Vortex (Kraken Reaper / Pelagic Ascendant)
+        if (sim.vortexActiveTimer > 0) {
+          sim.vortexActiveTimer = Math.max(0, sim.vortexActiveTimer - dt);
+          vortexGroup.visible = true;
+          vortexGroup.position.copy(sim.vortexPos);
+          vortexOuterRing.rotation.z += dt * 4.5;
+          vortexInnerRing.rotation.y += dt * 6.2;
+          vortexCore.scale.setScalar(1 + Math.sin(elapsed * 14) * 0.18);
+          enemies.forEach((e) => {
+            if (e.active) {
+              const d = e.group.position.distanceTo(sim.vortexPos);
+              if (d < 28) {
+                e.group.position.lerp(sim.vortexPos, dt * 1.9);
+                e.hp -= 28 * dt;
+              }
+            }
+          });
+          projectiles.forEach((p) => {
+            if (
+              p.active &&
+              !p.isPlayer &&
+              p.pos.distanceTo(sim.vortexPos) < 26
+            ) {
+              p.vel.multiplyScalar(Math.max(0.75, 1 - dt * 1.5));
+            }
+          });
+          if (sim.vortexActiveTimer <= 0) {
+            vortexGroup.visible = false;
+          }
+        } else {
+          vortexGroup.visible = false;
+        }
+
+        // Update Trench Warden 2 Live 3D Orbiting Drones (Repair & Attack)
+        if (
+          sim.activeAbilityId === 'guardian_swarm' &&
+          sim.activeAbilityTimer > 0
+        ) {
+          repairDroneGroup.visible = true;
+          attackDroneGroup.visible = true;
+          repairDroneGroup.position.set(
+            sim.playerX + Math.cos(elapsed * 2.8) * 3.1,
+            sim.playerY + 1.15 + Math.sin(elapsed * 3.2) * 0.45,
+            Math.sin(elapsed * 2.8) * 1.5,
+          );
+          repairDroneGroup.rotation.y += dt * 3.4;
+
+          attackDroneGroup.position.set(
+            sim.playerX + Math.cos(elapsed * 2.8 + Math.PI) * 3.1,
+            sim.playerY + 1.15 + Math.cos(elapsed * 3.2) * 0.45,
+            Math.sin(elapsed * 2.8 + Math.PI) * 1.5,
+          );
+          attackDroneGroup.rotation.z = Math.sin(elapsed * 4) * 0.2;
+
+          sim.droneHealTimer -= dt;
+          if (sim.droneHealTimer <= 0) {
+            sim.droneHealTimer = 1.9;
+            sim.hull = Math.min(sim.maxHull, sim.hull + 4);
+            sim.shield = Math.min(sim.maxShield, sim.shield + 5);
+            spawnParticleBurst(repairDroneGroup.position, 0x34d399, 6, 8);
+          }
+
+          sim.droneFireTimer -= dt;
+          if (sim.droneFireTimer <= 0) {
+            sim.droneFireTimer = 0.65;
+            const tgtEnemy = enemies.find((e) => e.active);
+            const tgtBossApp =
+              !tgtEnemy && bossObj && bossObj.active
+                ? bossObj.appendages.find((a) => !a.destroyed)
+                : undefined;
+            const tgtPos = tgtEnemy
+              ? tgtEnemy.group.position
+              : tgtBossApp
+                ? tgtBossApp.worldPos
+                : bossObj && bossObj.active
+                  ? bossObj.group.position
+                  : null;
+            if (tgtPos) {
+              for (let i = 0; i < 50; i++) {
+                const p = projectiles[i];
+                if (!p.active) {
+                  p.active = true;
+                  p.isPlayer = true;
+                  p.isTorpedo = false;
+                  p.pos.copy(attackDroneGroup.position);
+                  _vec3B.subVectors(tgtPos, p.pos).normalize();
+                  p.vel.copy(_vec3B).multiplyScalar(sim.shipPrimarySpeed * 1.05);
+                  p.damage = Math.round(18 * sim.shipPrimaryDmgMult);
+                  p.life = 1.6;
+                  p.targetEnemyId = null;
+                  p.mesh.position.copy(p.pos);
+                  p.mesh.lookAt(tgtPos);
+                  p.mesh.visible = true;
+                  break;
+                }
+              }
+            }
+          }
+        } else {
+          repairDroneGroup.visible = false;
+          attackDroneGroup.visible = false;
+        }
+
+        // Pelagic Ascendant passive: 4 gimbaled wing turrets fire periodic tracking bolts automatically
+        if (sim.activeShipId === 'pelagic_ascendant') {
+          sim.wingTurretFireTimer -= dt;
+          if (sim.wingTurretFireTimer <= 0) {
+            sim.wingTurretFireTimer = 1.25;
+            const targetPos =
+              enemies.find((e) => e.active)?.group.position ||
+              (bossObj && bossObj.active
+                ? bossObj.appendages.find((a) => !a.destroyed)?.worldPos ||
+                  bossObj.group.position
+                : null);
+            if (targetPos) {
+              [-2.9, 2.9].forEach((tx) => {
+                for (let i = 0; i < 50; i++) {
+                  const p = projectiles[i];
+                  if (!p.active) {
+                    p.active = true;
+                    p.isPlayer = true;
+                    p.isTorpedo = false;
+                    p.pos.set(
+                      vanguard.group.position.x + tx,
+                      vanguard.group.position.y + 0.35,
+                      vanguard.group.position.z - 0.6,
+                    );
+                    _vec3B.subVectors(targetPos, p.pos).normalize();
+                    p.vel.copy(_vec3B).multiplyScalar(sim.shipPrimarySpeed);
+                    p.damage = Math.round(16 * sim.shipPrimaryDmgMult);
+                    p.life = 1.6;
+                    p.targetEnemyId = null;
+                    p.mesh.position.copy(p.pos);
+                    p.mesh.lookAt(targetPos);
+                    p.mesh.visible = true;
+                    break;
+                  }
+                }
+              });
+            }
+          }
         }
 
         // High-Pressure Abyssal Danger Zones & Structural Hull Stress Simulation
@@ -3264,12 +4109,19 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             (activeMission.objectiveType === 'flight_school' &&
               sim.shotsFired < 4));
         if (sim.fireCooldown > 0) sim.fireCooldown -= dt;
+        const overdriveCadence =
+          sim.activeAbilityId === 'riptide_overdrive' &&
+          sim.activeAbilityTimer > 0
+            ? 1.4
+            : 1.0;
         if (
           (pointerFiring || touchFiring || autoFireActive || heldKeys.has('KeyJ')) &&
           sim.fireCooldown <= 0
         ) {
           firePrimaryCannons();
-          sim.fireCooldown = 0.13 / Math.max(0.5, sim.shipPrimaryFireRateMult);
+          sim.fireCooldown =
+            0.13 /
+            Math.max(0.5, sim.shipPrimaryFireRateMult * overdriveCadence);
         }
 
         // Camera Choreography (Chase Cam vs Cockpit View + Decaying Trauma Shake)
@@ -3753,7 +4605,28 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                 sim.sonarActiveTimer > 0 && e.type === 'hazard_mine'
                   ? 1.5
                   : 1.0;
-              e.hp -= p.damage * hazardSonarBonus;
+              const resonanceMult =
+                sim.activeAbilityId === 'resonance_scan' &&
+                sim.activeAbilityTimer > 0
+                  ? 1.1
+                  : 1.0;
+              const predatorMult =
+                sim.activeAbilityId === 'predator_mark' &&
+                sim.activeAbilityTimer > 0 &&
+                sim.markedTargetId === e.id
+                  ? 1.55
+                  : 1.0;
+              const breakerCruiserMult =
+                sim.activeShipId === 'leviathan_breaker' &&
+                e.type === 'cruiser'
+                  ? 1.25
+                  : 1.0;
+              e.hp -=
+                p.damage *
+                hazardSonarBonus *
+                resonanceMult *
+                predatorMult *
+                breakerCruiserMult;
               e.hitFlashTimer = 0.08;
               (
                 e.coreMesh.material as THREE.MeshStandardMaterial
@@ -3809,11 +4682,16 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                 const siphonMult = sim.upgrades.includes('biolume_siphon_array')
                   ? 1 + 0.35 * getModuleTierMult('biolume_siphon_array')
                   : 1.0;
+                const sovereignYield =
+                  sim.activeShipId === 'abyssal_sovereign' ? 1.2 : 1.0;
                 playerSave.salvageCredits += Math.round(
-                  (e.type === 'cruiser' ? 45 : 22) * siphonMult,
+                  (e.type === 'cruiser' ? 45 : 22) * siphonMult * sovereignYield,
                 );
                 if (sim.upgrades.includes('biolume_siphon_array')) {
                   sim.shield = Math.min(sim.maxShield, sim.shield + 4);
+                }
+                if (sim.activeShipId === 'abyssal_talon') {
+                  sim.shield = Math.min(sim.maxShield, sim.shield + 6);
                 }
                 persistSave();
 
@@ -3855,8 +4733,35 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                 const isSonarWeakPointHit =
                   sim.sonarActiveTimer > 0 &&
                   sim.sonarWeakPointSlot === app.slot;
-                const sonarCritMult = isSonarWeakPointHit ? 1.6 : 1.0;
-                const dmg = p.damage * visorMult * sonarCritMult;
+                const sonarCritMult = isSonarWeakPointHit
+                  ? sim.activeShipId === 'echo_tactical'
+                    ? 1.6 * 1.18
+                    : 1.6
+                  : 1.0;
+                const bossResonance =
+                  sim.activeAbilityId === 'resonance_scan' &&
+                  sim.activeAbilityTimer > 0
+                    ? 1.1
+                    : 1.0;
+                const bossPredator =
+                  sim.activeAbilityId === 'predator_mark' &&
+                  sim.activeAbilityTimer > 0 &&
+                  sim.markedTargetId === app.numericId
+                    ? 1.55
+                    : 1.0;
+                const breakerBossMult =
+                  (sim.activeShipId === 'leviathan_breaker' ? 1.25 : 1.0) *
+                  (sim.activeAbilityId === 'seismic_lock' &&
+                  sim.activeAbilityTimer > 0
+                    ? 1.35
+                    : 1.0);
+                const dmg =
+                  p.damage *
+                  visorMult *
+                  sonarCritMult *
+                  bossResonance *
+                  bossPredator *
+                  breakerBossMult;
                 app.hp = Math.max(0, app.hp - dmg);
                 bossObj.hp = Math.max(1, bossObj.hp - dmg * 0.55);
                 app.hitFlashTimer = 0.11;
@@ -3943,10 +4848,27 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
               const severedVulnerabilityMult = 1.0 + severedCount * 0.2;
               const coreSonarMult =
                 sim.sonarActiveTimer > 0 && sim.sonarWeakPointSlot === 'core'
-                  ? 1.6
+                  ? sim.activeShipId === 'echo_tactical'
+                    ? 1.6 * 1.18
+                    : 1.6
+                  : 1.0;
+              const coreSeismicMult =
+                sim.activeAbilityId === 'seismic_lock' &&
+                sim.activeAbilityTimer > 0
+                  ? 1.35
+                  : 1.0;
+              const coreResonanceMult =
+                sim.activeAbilityId === 'resonance_scan' &&
+                sim.activeAbilityTimer > 0
+                  ? 1.1
                   : 1.0;
               bossObj.hp -=
-                p.damage * visorMult * severedVulnerabilityMult * coreSonarMult;
+                p.damage *
+                visorMult *
+                severedVulnerabilityMult *
+                coreSonarMult *
+                coreSeismicMult *
+                coreResonanceMult;
               bossObj.hitFlashTimer = 0.08;
               (
                 bossObj.coreMesh.material as THREE.MeshStandardMaterial
@@ -4003,7 +4925,8 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           if (!pk.active) continue;
           pk.pos.z += 22 * dt;
           // Gently magnetize toward player when close
-          if (pk.pos.distanceTo(vanguard.group.position) < 12) {
+          const magnetDist = sim.activeShipId === 'trench_warden' ? 15 : 12;
+          if (pk.pos.distanceTo(vanguard.group.position) < magnetDist) {
             pk.pos.lerp(vanguard.group.position, dt * 6.5);
           }
           pk.mesh.position.copy(pk.pos);
@@ -4031,9 +4954,13 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         const ch = renderer.domElement.clientHeight;
         const reticlePxX = ((sim.aimX + 1) * 0.5) * cw;
         const reticlePxY = ((-sim.aimY + 1) * 0.5) * ch;
-        const lockRadiusPx = sim.upgrades.includes('sonar_crit_visor')
+        const baseLockPx = sim.upgrades.includes('sonar_crit_visor')
           ? 125
           : 92;
+        const lockRadiusPx =
+          sim.activeShipId === 'vanguard_interceptor'
+            ? baseLockPx * 1.08
+            : baseLockPx;
 
         const screenTargets: ScreenLockTarget[] = [];
 

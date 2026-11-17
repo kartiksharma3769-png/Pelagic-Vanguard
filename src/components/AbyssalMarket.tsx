@@ -2,11 +2,14 @@ import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Crosshair,
   Database,
   Eye,
+  FileText,
   Flame,
   Layers,
   Lock,
@@ -34,6 +37,7 @@ import {
   UpgradeId,
   WeaponId,
 } from '../game/types';
+import { isShipMissionUnlocked } from '../game/saveManager';
 
 interface AbyssalMarketProps {
   save: PlayerSaveData;
@@ -81,6 +85,7 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
 }) => {
   const [category, setCategory] = useState<MarketCategory>('ships');
   const [isInspecting3D, setIsInspecting3D] = useState<boolean>(false);
+  const [showSpecSheet, setShowSpecSheet] = useState<boolean>(false);
   const [selectedShipId, setSelectedShipId] = useState<ShipClassId>(
     save.selectedShip,
   );
@@ -161,13 +166,19 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
     return (
       <div className="relative h-full w-full flex flex-col justify-between p-3 sm:p-5 pt-safe pb-safe px-safe pointer-events-none select-none overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="pointer-events-auto rounded-2xl bg-slate-950/80 backdrop-blur-md ring-1 ring-white/15 px-3.5 py-2.5 shadow-xl max-w-xs sm:max-w-sm">
+          <div className="pointer-events-auto rounded-2xl bg-slate-950/85 backdrop-blur-md ring-1 ring-white/15 px-3.5 py-2.5 shadow-xl max-w-xs sm:max-w-md">
             <div className="flex items-center gap-1.5 text-[11px] font-medium text-amber-400">
               <span className="font-mono font-bold">
                 TIER {focusShipTier}/{SHIP_CATALOG.length}
               </span>
               <span aria-hidden="true">·</span>
-              <span>3D Showroom</span>
+              <span style={{ color: focusShip.accentColor }}>
+                {focusShip.rarity}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="text-slate-200 truncate">
+                {focusShip.roleTitle}
+              </span>
             </div>
             <h1 className="font-display text-lg sm:text-xl font-bold text-white truncate">
               {focusShip.name} · {focusCosmetic.name}
@@ -175,6 +186,46 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
             <p className="mt-0.5 text-[11px] text-slate-300 truncate">
               {focusShip.subtitle}
             </p>
+            <button
+              onClick={() => setShowSpecSheet((prev) => !prev)}
+              className="mt-2 min-h-[38px] rounded-xl bg-slate-900/90 ring-1 ring-white/15 px-3 text-xs font-semibold text-amber-200 hover:bg-white/10 transition cursor-pointer inline-flex items-center gap-1"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>Spec Sheet</span>
+              {showSpecSheet ? (
+                <ChevronUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+            </button>
+
+            {showSpecSheet && (
+              <div className="mt-2 max-h-[38dvh] overflow-y-auto space-y-1.5 border-t border-white/10 pt-2 text-[11px] text-slate-200">
+                <div>
+                  <span className="font-semibold text-fuchsia-300">
+                    Active — {focusShip.activeAbility.name}:
+                  </span>{' '}
+                  <span className="text-slate-300">
+                    {focusShip.activeAbility.description}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-semibold text-cyan-300">
+                    Passive — {focusShip.passiveAbility.name}:
+                  </span>{' '}
+                  <span className="text-slate-300">
+                    {focusShip.passiveAbility.description}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-300">
+                  {focusShip.primaryWeaponLabel} ·{' '}
+                  {focusShip.secondaryWeaponLabel}
+                </div>
+                <p className="text-[10px] text-slate-400 italic">
+                  {focusShip.loreText}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="pointer-events-auto flex items-center gap-1.5">
@@ -487,12 +538,130 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
                       );
                     })}
                   </div>
+
+                  {/* Expandable Ship Spec Sheet */}
+                  <div className="pt-1 border-t border-white/10">
+                    <button
+                      onClick={() => setShowSpecSheet((prev) => !prev)}
+                      className="w-full min-h-[36px] flex items-center justify-between text-[11px] font-semibold text-amber-200 cursor-pointer px-1"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <FileText className="h-3.5 w-3.5 text-amber-300 shrink-0" />
+                        <span>
+                          {focusShip.rarity} · {focusShip.roleTitle} · Spec Sheet
+                        </span>
+                      </span>
+                      {showSpecSheet ? (
+                        <ChevronUp className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 shrink-0" />
+                      )}
+                    </button>
+
+                    {showSpecSheet && (
+                      <div className="mt-2 space-y-2 text-[11px] leading-relaxed border-t border-white/10 pt-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="rounded-xl bg-slate-950/70 p-2 border border-fuchsia-400/20">
+                            <div className="font-semibold text-fuchsia-300 flex items-center justify-between gap-1">
+                              <span className="truncate">
+                                Active: {focusShip.activeAbility.name}
+                              </span>
+                              <span className="font-mono text-[10px] text-slate-400 shrink-0 tabular-nums">
+                                {focusShip.activeAbility.cooldownSeconds}s CD
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-[10px] text-slate-300">
+                              {focusShip.activeAbility.description}
+                            </p>
+                          </div>
+
+                          <div className="rounded-xl bg-slate-950/70 p-2 border border-cyan-400/20">
+                            <div className="font-semibold text-cyan-300 truncate">
+                              Passive: {focusShip.passiveAbility.name}
+                            </div>
+                            <p className="mt-0.5 text-[10px] text-slate-300">
+                              {focusShip.passiveAbility.description}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 text-[9px] font-mono bg-slate-950/75 rounded-xl p-1.5 border border-white/10">
+                          <div>
+                            <span className="text-slate-400">PWR </span>
+                            <span className="text-emerald-300 font-bold">
+                              {focusShip.fleetPowerIndex}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">ACCEL </span>
+                            <span className="text-cyan-300 font-bold">
+                              {Math.round(focusShip.accelerationMult * 100)}%
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">TURN </span>
+                            <span className="text-sky-300 font-bold">
+                              {Math.round(focusShip.turnRateMult * 100)}%
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">FIRE </span>
+                            <span className="text-amber-300 font-bold">
+                              {Math.round(focusShip.fireRateMult * 100)}%
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">SONAR </span>
+                            <span className="text-teal-300 font-bold">
+                              +{focusShip.sonarDurationBonus}s
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">SLOTS </span>
+                            <span className="text-fuchsia-300 font-bold">
+                              {focusShip.moduleCapacity}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px] text-slate-300">
+                          <div>
+                            <span className="text-slate-400">Primary:</span>{' '}
+                            {focusShip.primaryWeaponLabel}
+                          </div>
+                          <div>
+                            <span className="text-slate-400">Secondary:</span>{' '}
+                            {focusShip.secondaryWeaponLabel}
+                          </div>
+                          <div>
+                            <span className="text-slate-400">Boost Propulsion:</span>{' '}
+                            {focusShip.boostSignatureLabel}
+                          </div>
+                          <div>
+                            <span className="text-slate-400">Evade Maneuver:</span>{' '}
+                            {focusShip.evadeSignatureLabel}
+                          </div>
+                        </div>
+
+                        <div className="text-[10px] text-amber-200/90">
+                          {focusShip.tradeOffText}
+                        </div>
+                        <div className="text-[10px] font-semibold text-cyan-300">
+                          Requisition Requirement: {focusShip.unlockRequirementText}
+                        </div>
+                        <p className="text-[10px] text-slate-400 italic">
+                          {focusShip.loreText}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {SHIP_CATALOG.map((ship, idx) => {
                     const owned = save.ownedShips.includes(ship.id);
                     const active = save.selectedShip === ship.id;
+                    const missionUnlocked = isShipMissionUnlocked(ship, save);
                     const isFocused = focusShip.id === ship.id;
                     const tierNum = ship.tier || idx + 1;
                     return (
@@ -510,7 +679,7 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-white truncate">
-                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-white/10 shrink-0">
+                            <span className="font-mono text-[10px] text-amber-300 shrink-0">
                               T{tierNum}
                             </span>
                             <span className="truncate">{ship.name}</span>
@@ -519,19 +688,31 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
                             className="text-[11px] font-medium truncate mt-0.5"
                             style={{ color: ship.accentColor }}
                           >
-                            {ship.classLabel} · {ship.baseHull} HP /{' '}
-                            {ship.baseShield} SP · {ship.baseTorpedoLocks} Locks
+                            {ship.rarity} · {ship.baseHull} HP /{' '}
+                            {ship.baseShield} SP · {ship.moduleCapacity} Slots
                           </div>
                         </div>
-                        <div className="shrink-0 font-mono text-[11px] font-bold tabular-nums">
+                        <div className="shrink-0 font-mono text-[11px] font-bold tabular-nums text-right">
                           {active ? (
                             <span className="text-emerald-300">ON</span>
                           ) : owned ? (
                             <span className="text-cyan-300">OWNED</span>
-                          ) : (
-                            <span className="text-amber-300">
-                              {ship.costCredits} CR
+                          ) : !missionUnlocked ? (
+                            <span className="inline-flex items-center gap-1 text-slate-400">
+                              <Lock className="h-3 w-3 text-amber-400" />
+                              <span>LOCKED</span>
                             </span>
+                          ) : (
+                            <div className="flex flex-col items-end">
+                              <span className="text-amber-300">
+                                {ship.costCredits} CR
+                              </span>
+                              {ship.costMaterials > 0 && (
+                                <span className="text-[10px] text-fuchsia-300">
+                                  +{ship.costMaterials} AL
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
                       </button>
@@ -781,6 +962,10 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
                 (() => {
                   const owned = save.ownedShips.includes(focusShip.id);
                   const active = save.selectedShip === focusShip.id;
+                  const missionUnlocked = isShipMissionUnlocked(
+                    focusShip,
+                    save,
+                  );
                   const missingCr = Math.max(
                     0,
                     focusShip.costCredits - save.salvageCredits,
@@ -789,7 +974,8 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
                     0,
                     focusShip.costMaterials - save.abyssalMaterials,
                   );
-                  const canAfford = missingCr === 0 && missingMat === 0;
+                  const canAfford =
+                    missionUnlocked && missingCr === 0 && missingMat === 0;
 
                   return (
                     <>
@@ -802,7 +988,9 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
                             {focusShip.moduleCapacity} Slots
                           </div>
                           <div className="text-[11px] text-slate-300 truncate">
-                            {focusShip.description}
+                            {!owned && !missionUnlocked
+                              ? `Prerequisite: ${focusShip.unlockRequirementText}`
+                              : focusShip.description}
                           </div>
                         </div>
                       </div>
@@ -839,11 +1027,13 @@ export const AbyssalMarket: React.FC<AbyssalMarketProps> = ({
                               : 'bg-rose-950/40 text-rose-300 border border-rose-500/30 cursor-not-allowed'
                           }`}
                         >
-                          {canAfford
-                            ? `Purchase Hull (${focusShip.costCredits} CR + ${focusShip.costMaterials} Alloy)`
-                            : `Need ${missingCr > 0 ? `+${missingCr} CR ` : ''}${
-                                missingMat > 0 ? `+${missingMat} Alloy` : ''
-                              }`}
+                          {!missionUnlocked
+                            ? `Locked — ${focusShip.unlockRequirementText}`
+                            : canAfford
+                              ? `Purchase Hull (${focusShip.costCredits} CR + ${focusShip.costMaterials} Alloy)`
+                              : `Need ${missingCr > 0 ? `+${missingCr} CR ` : ''}${
+                                  missingMat > 0 ? `+${missingMat} Alloy` : ''
+                                } (${focusShip.costCredits} CR + ${focusShip.costMaterials} AL)`}
                         </button>
                       )}
                     </>

@@ -24,7 +24,7 @@ import {
   UpgradeId,
   WeaponId,
 } from './game/types';
-import { MISSION_CATALOG, STAGE_CONFIGS } from './game/stages';
+import { MISSION_CATALOG, SHIP_CATALOG, STAGE_CONFIGS } from './game/stages';
 import {
   detectDefaultTouchControls,
   getUnlockedStagesFromSave,
@@ -83,6 +83,14 @@ const INITIAL_HUD: HudSnapshot = {
   sonarWeakPointSlot: null,
   sonarHazardsCount: 0,
   barrelRolling: false,
+  shipRarity: SHIP_CATALOG[0].rarity,
+  shipRoleTitle: SHIP_CATALOG[0].roleTitle,
+  activeAbilityName: SHIP_CATALOG[0].activeAbility.name,
+  activeAbilityActive: false,
+  activeAbilityRemainingSeconds: 0,
+  activeAbilityCooldown: 0,
+  activeAbilityCooldownSeconds: 0,
+  activeDronesCount: 0,
   bossActive: false,
   bossName: STAGE_CONFIGS[1].bossName,
   bossSubtitle: STAGE_CONFIGS[1].bossSubtitle,
@@ -334,6 +342,10 @@ export default function App() {
     simControllerRef.current?.triggerTacticalSonar();
   }, []);
 
+  const handleTriggerShipAbility = useCallback(() => {
+    simControllerRef.current?.triggerShipAbility();
+  }, []);
+
   const handleFocusAppendage = useCallback((slot: AppendageSlot) => {
     simControllerRef.current?.focusBossAppendage(slot);
   }, []);
@@ -403,6 +415,7 @@ export default function App() {
         onTriggerBarrelRoll={handleTriggerBarrelRoll}
         onTriggerTorpedoSalvo={handleTriggerTorpedoSalvo}
         onTriggerTacticalSonar={handleTriggerTacticalSonar}
+        onTriggerShipAbility={handleTriggerShipAbility}
         onFocusAppendage={handleFocusAppendage}
         onSummonBossNow={handleSummonBossNow}
       />
