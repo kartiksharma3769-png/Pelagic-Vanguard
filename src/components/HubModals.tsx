@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Check,
   Compass,
+  Crosshair,
   Eye,
   Flame,
   Gamepad2,
@@ -1277,6 +1278,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 {settings.touchControlsEnabled ? 'ON' : 'OFF'}
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm font-bold text-white">
+                  <Crosshair className="h-4 w-4 text-emerald-400 shrink-0" />
+                  <span>3D Aiming & Hitbox Debug Visualizer</span>
+                </div>
+                <p className="mt-0.5 text-xs text-slate-300">
+                  Renders camera-to-reticle ray, world aim point, muzzle convergence lines, projectile velocity vectors, and hitbox spheres (or press F3 in flight).
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  onUpdateSettings({
+                    aimDebugEnabled: !settings.aimDebugEnabled,
+                  })
+                }
+                className={`min-h-[44px] shrink-0 rounded-xl px-4 text-xs font-bold transition cursor-pointer ${
+                  settings.aimDebugEnabled
+                    ? 'bg-emerald-400 text-slate-950'
+                    : 'bg-slate-800 text-slate-300 border border-white/10'
+                }`}
+              >
+                {settings.aimDebugEnabled ? 'ON' : 'OFF'}
               </button>
             </div>
 

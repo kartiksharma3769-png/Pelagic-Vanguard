@@ -31,7 +31,27 @@ export function getTodayDateKey(): string {
 }
 
 export function detectDefaultTouchControls(): boolean {
-  return true;
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return false;
+  }
+  try {
+    const hasCoarsePointer =
+      typeof window.matchMedia === 'function' &&
+      (window.matchMedia('(pointer: coarse)').matches ||
+        window.matchMedia('(any-pointer: coarse)').matches);
+    const hasTouchPoints =
+      (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
+      'ontouchstart' in window;
+    const isMobileViewport = window.innerWidth <= 1024;
+    const isMobileUA = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(
+      navigator.userAgent || '',
+    );
+    return Boolean(
+      hasCoarsePointer || isMobileUA || (hasTouchPoints && isMobileViewport),
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function createDefaultSettings(muted: boolean = false): GameSettings {
@@ -52,6 +72,7 @@ export function createDefaultSettings(muted: boolean = false): GameSettings {
     touchLayout: 'standard',
     joystickSensitivity: 100,
     joystickDeadzone: 10,
+    aimDebugEnabled: false,
   };
 }
 

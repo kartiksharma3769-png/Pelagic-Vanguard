@@ -590,71 +590,71 @@ const SHIP_HARDPOINT_LAYOUTS: Record<ShipClassId, ShipHardpointLayout> = {
   },
   rift_manta: {
     primaryMounts: [
-      { pos: [-2.98, 0.02, 0.08], scale: 0.95 },
-      { pos: [2.98, 0.02, 0.08], scale: 0.95 },
+      { pos: [-3.12, -0.08, 0.15], scale: 0.95 },
+      { pos: [3.12, -0.08, 0.15], scale: 0.95 },
     ],
     secondaryMounts: [
-      { pos: [-1.76, -0.18, 0.18], scale: 0.95 },
-      { pos: [1.76, -0.18, 0.18], scale: 0.95 },
+      { pos: [-1.76, -0.16, 0.18], scale: 0.95 },
+      { pos: [1.76, -0.16, 0.18], scale: 0.95 },
     ],
   },
   leviathan_breaker: {
     primaryMounts: [
-      { pos: [0, 0.3, -1.25], scale: 1.32 },
-      { pos: [-1.58, 0.02, -0.72], scale: 1.02 },
-      { pos: [1.58, 0.02, -0.72], scale: 1.02 },
+      { pos: [0, 0.26, -1.25], scale: 1.32 },
+      { pos: [-1.58, 0.04, -0.72], scale: 1.02 },
+      { pos: [1.58, 0.04, -0.72], scale: 1.02 },
     ],
     secondaryMounts: [
-      { pos: [-1.95, -0.2, 0.05], scale: 1.16 },
-      { pos: [1.95, -0.2, 0.05], scale: 1.16 },
+      { pos: [-2.65, -0.24, 0.25], scale: 1.16 },
+      { pos: [2.65, -0.24, 0.25], scale: 1.16 },
     ],
   },
   trench_warden: {
     primaryMounts: [
-      { pos: [-2.12, 0.2, -0.32], scale: 0.95 },
-      { pos: [2.12, 0.2, -0.32], scale: 0.95 },
-      { pos: [-1.08, 0.24, -0.78], scale: 0.88 },
-      { pos: [1.08, 0.24, -0.78], scale: 0.88 },
+      { pos: [-2.12, 0.22, -0.32], scale: 0.95 },
+      { pos: [2.12, 0.22, -0.32], scale: 0.95 },
+      { pos: [-1.08, 0.26, -0.78], scale: 0.88 },
+      { pos: [1.08, 0.26, -0.78], scale: 0.88 },
     ],
     secondaryMounts: [
-      { pos: [-1.55, -0.22, 0.2], scale: 1.05 },
-      { pos: [1.55, -0.22, 0.2], scale: 1.05 },
+      { pos: [-1.55, -0.2, 0.2], scale: 1.05 },
+      { pos: [1.55, -0.2, 0.2], scale: 1.05 },
     ],
   },
   kraken_reaper: {
     primaryMounts: [
-      { pos: [-2.18, 0.38, -0.82], scale: 0.92 },
-      { pos: [2.18, 0.38, -0.82], scale: 0.92 },
-      { pos: [-2.28, -0.32, -0.68], scale: 0.92 },
-      { pos: [2.28, -0.32, -0.68], scale: 0.92 },
+      { pos: [-1.18, 0.24, -0.88], scale: 0.92 },
+      { pos: [1.18, 0.24, -0.88], scale: 0.92 },
+      { pos: [-1.28, -0.22, -0.58], scale: 0.92 },
+      { pos: [1.28, -0.22, -0.58], scale: 0.92 },
     ],
     secondaryMounts: [
-      { pos: [-1.35, -0.24, 0.15], scale: 1.06 },
-      { pos: [1.35, -0.24, 0.15], scale: 1.06 },
+      { pos: [-0.95, -0.26, 0.15], scale: 1.04 },
+      { pos: [0.95, -0.26, 0.15], scale: 1.04 },
     ],
   },
   abyssal_sovereign: {
     primaryMounts: [
       { pos: [-1.12, 0.32, -1.12], scale: 1.08 },
       { pos: [1.12, 0.32, -1.12], scale: 1.08 },
-      { pos: [-2.15, 0.12, -0.24], scale: 0.98 },
-      { pos: [2.15, 0.12, -0.24], scale: 0.98 },
+      { pos: [-2.05, 0.16, -0.24], scale: 0.98 },
+      { pos: [2.05, 0.16, -0.24], scale: 0.98 },
     ],
     secondaryMounts: [
-      { pos: [-1.58, -0.22, 0.22], scale: 1.18 },
-      { pos: [1.58, -0.22, 0.22], scale: 1.18 },
+      { pos: [-1.58, -0.2, 0.22], scale: 1.18 },
+      { pos: [1.58, -0.2, 0.22], scale: 1.18 },
     ],
   },
   pelagic_ascendant: {
     primaryMounts: [
       { pos: [-0.74, 0.16, -1.38], scale: 1.16 },
       { pos: [0.74, 0.16, -1.38], scale: 1.16 },
-      { pos: [-2.35, 0.18, -0.28], scale: 0.92 },
-      { pos: [2.35, 0.18, -0.28], scale: 0.92 },
+      { pos: [-2.25, 0.16, -0.28], scale: 0.92 },
+      { pos: [2.25, 0.16, -0.28], scale: 0.92 },
     ],
     secondaryMounts: [
-      { pos: [-1.52, -0.22, 0.16], scale: 1.15 },
-      { pos: [1.52, -0.22, 0.16], scale: 1.15 },
+      { pos: [-1.52, -0.2, 0.16], scale: 1.15 },
+      { pos: [1.52, -0.2, 0.16], scale: 1.15 },
     ],
   },
 };
@@ -822,6 +822,14 @@ export function createVanguardShip(mats: MaterialBank): {
   for (let mIdx = 0; mIdx < 4; mIdx++) {
     const podRoot = new THREE.Group();
 
+    // Flush Structural Hardpoint Mounting Pylon & Gimbal Collar
+    const mountPylon = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.22, 0.48),
+      navalBronzeMat,
+    );
+    mountPylon.position.set(0, 0.08, 0.24);
+    podRoot.add(mountPylon);
+
     // 2A. Cavitation Cannons (`cavitation_cannons`)
     const cavModel = new THREE.Group();
     const receiver = new THREE.Mesh(
@@ -948,21 +956,33 @@ export function createVanguardShip(mats: MaterialBank): {
   }
 
   // ============================================================================
-  // 3. PER-SHIP SECONDARY TORPEDO & SWARM ORDNANCE PODS
+  // 3. PER-SHIP SECONDARY TORPEDO & SWARM ORDNANCE PODS (Positioned per Mount)
   // ============================================================================
   const secondaryOrdnanceRoot = new THREE.Group();
   group.add(secondaryOrdnanceRoot);
 
-  // 3A. Sonic Torpedoes (`sonic_torpedoes`)
-  const secSonicPodsGroup = new THREE.Group();
-  [-1.32, 1.32].forEach((sideX) => {
-    const pylon = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.22, 0.65),
+  interface SecondaryMountSlot {
+    root: THREE.Group;
+    sonicModel: THREE.Group;
+    heavyBreachModel: THREE.Group;
+    hexaSwarmModel: THREE.Group;
+  }
+
+  const secondaryMountSlots: SecondaryMountSlot[] = [];
+
+  for (let sIdx = 0; sIdx < 2; sIdx++) {
+    const slotRoot = new THREE.Group();
+
+    // Flush Structural Pylon connecting secondary rack to the ship hull
+    const slotPylon = new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, 0.26, 0.68),
       machinedSteelMat,
     );
-    pylon.position.set(sideX, -0.14, 0.15);
-    secSonicPodsGroup.add(pylon);
+    slotPylon.position.set(0, 0.14, 0.05);
+    slotRoot.add(slotPylon);
 
+    // 3A. Sonic Torpedoes (`sonic_torpedoes`)
+    const sonicGroup = new THREE.Group();
     [
       [-0.11, 0.05],
       [0.11, 0.05],
@@ -972,73 +992,57 @@ export function createVanguardShip(mats: MaterialBank): {
         new THREE.CylinderGeometry(0.095, 0.095, 1.28, 12).rotateX(Math.PI / 2),
         mats.darkGraphiteTrim,
       );
-      tube.position.set(sideX + ox, -0.28 + oy, 0.12);
+      tube.position.set(ox, oy, 0);
 
       const warhead = new THREE.Mesh(
         new THREE.SphereGeometry(0.088, 12, 10),
         shipTrimMat,
       );
-      warhead.position.set(sideX + ox, -0.28 + oy, -0.52);
+      warhead.position.set(ox, oy, -0.64);
 
-      secSonicPodsGroup.add(tube, warhead);
+      sonicGroup.add(tube, warhead);
     });
-  });
-  secondaryOrdnanceRoot.add(secSonicPodsGroup);
+    slotRoot.add(sonicGroup);
 
-  // 3B. EMP Depth Seekers (`heavy_breach_torpedo`)
-  const secHeavyBreachGroup = new THREE.Group();
-  [-1.35, 1.35].forEach((sideX) => {
-    const pylon = new THREE.Mesh(
-      new THREE.BoxGeometry(0.12, 0.24, 0.78),
-      machinedSteelMat,
-    );
-    pylon.position.set(sideX, -0.15, 0.05);
-
+    // 3B. EMP Depth Seekers (`heavy_breach_torpedo`)
+    const breachGroup = new THREE.Group();
     const torpBody = new THREE.Mesh(
       new THREE.CylinderGeometry(0.17, 0.17, 1.62, 16).rotateX(Math.PI / 2),
       anechoicRubberMat,
     );
-    torpBody.position.set(sideX, -0.32, 0.05);
+    torpBody.position.set(0, -0.04, 0);
 
     const empCoilBand = new THREE.Mesh(
       new THREE.TorusGeometry(0.18, 0.028, 8, 16),
       mats.biolumeCyan,
     );
-    empCoilBand.position.set(sideX, -0.32, -0.48);
+    empCoilBand.position.set(0, -0.04, -0.48);
 
     const noseDome = new THREE.Mesh(
       new THREE.SphereGeometry(0.17, 14, 12),
       machinedSteelMat,
     );
     noseDome.scale.set(1, 1, 1.35);
-    noseDome.position.set(sideX, -0.32, -0.76);
+    noseDome.position.set(0, -0.04, -0.78);
 
     const tailShroud = new THREE.Mesh(
       new THREE.CylinderGeometry(0.19, 0.16, 0.28, 14).rotateX(Math.PI / 2),
       machinedSteelMat,
     );
-    tailShroud.position.set(sideX, -0.32, 0.85);
+    tailShroud.position.set(0, -0.04, 0.82);
 
-    secHeavyBreachGroup.add(
-      pylon,
-      torpBody,
-      empCoilBand,
-      noseDome,
-      tailShroud,
-    );
-  });
-  secHeavyBreachGroup.visible = false;
-  secondaryOrdnanceRoot.add(secHeavyBreachGroup);
+    breachGroup.add(torpBody, empCoilBand, noseDome, tailShroud);
+    breachGroup.visible = false;
+    slotRoot.add(breachGroup);
 
-  // 3C. Hadal Swarm Pods (`hexa_swarm_rack`)
-  const secHexaSwarmGroup = new THREE.Group();
-  [-1.35, 1.35].forEach((sideX) => {
+    // 3C. Hadal Swarm Pods (`hexa_swarm_rack`)
+    const swarmGroup = new THREE.Group();
     const rackBox = new THREE.Mesh(
       new THREE.BoxGeometry(0.54, 0.36, 1.02),
       mats.darkGraphiteTrim,
     );
-    rackBox.position.set(sideX, -0.28, 0.15);
-    secHexaSwarmGroup.add(rackBox);
+    rackBox.position.set(0, 0, 0);
+    swarmGroup.add(rackBox);
 
     for (let r = 0; r < 2; r++) {
       for (let c = 0; c < 3; c++) {
@@ -1046,26 +1050,26 @@ export function createVanguardShip(mats: MaterialBank): {
           new THREE.CylinderGeometry(0.06, 0.06, 0.12, 10).rotateX(Math.PI / 2),
           machinedSteelMat,
         );
-        cellTube.position.set(
-          sideX + (c - 1) * 0.15,
-          -0.28 + (r - 0.5) * 0.14,
-          -0.36,
-        );
+        cellTube.position.set((c - 1) * 0.15, (r - 0.5) * 0.14, -0.51);
         const missileTip = new THREE.Mesh(
           new THREE.ConeGeometry(0.05, 0.18, 10).rotateX(-Math.PI / 2),
           mats.biolumeEmerald,
         );
-        missileTip.position.set(
-          sideX + (c - 1) * 0.15,
-          -0.28 + (r - 0.5) * 0.14,
-          -0.44,
-        );
-        secHexaSwarmGroup.add(cellTube, missileTip);
+        missileTip.position.set((c - 1) * 0.15, (r - 0.5) * 0.14, -0.59);
+        swarmGroup.add(cellTube, missileTip);
       }
     }
-  });
-  secHexaSwarmGroup.visible = false;
-  secondaryOrdnanceRoot.add(secHexaSwarmGroup);
+    swarmGroup.visible = false;
+    slotRoot.add(swarmGroup);
+
+    secondaryOrdnanceRoot.add(slotRoot);
+    secondaryMountSlots.push({
+      root: slotRoot,
+      sonicModel: sonicGroup,
+      heavyBreachModel: breachGroup,
+      hexaSwarmModel: swarmGroup,
+    });
+  }
 
   // ============================================================================
   // 4. EIGHT REALISTIC MECHANICAL MODULE HARDPOINTS + BOLTED ARMOR EVOLUTION
@@ -1265,10 +1269,11 @@ export function createVanguardShip(mats: MaterialBank): {
   tierMk3EvolutionGroup.visible = false;
   instrumentsRoot.add(tierMk3EvolutionGroup);
 
-  // Central Rotating Pump-Jet Stator Ring & Thruster Handles
+  // Legacy turbineRing handle (kept invisible on shared group so twin-engine ships have zero floating rings)
   const turbineGeo = new THREE.TorusGeometry(0.52, 0.04, 10, 24);
   const turbineRing = new THREE.Mesh(turbineGeo, machinedSteelMat);
   turbineRing.position.set(0, 0.0, 1.48);
+  turbineRing.visible = false;
   group.add(turbineRing);
 
   const thrusterLeft = thrusterAssemblies[0].outerPlume;
@@ -1425,12 +1430,25 @@ export function createVanguardShip(mats: MaterialBank): {
       pod.scatterModel.visible = priId === 'burst_pulse_repeater';
     });
 
-    // 4. Toggle & scale visible 3D Secondary Ordnance Pods
-    secondaryOrdnanceRoot.scale.set(matchedBuild.wingSpanScale, 1, 1);
+    // 4. Configure per-ship 3D Secondary Ordnance Hardpoint positions & toggle equipped model
     const secId = currentLoadoutState.secondaryWeaponId || 'sonic_torpedoes';
-    secSonicPodsGroup.visible = secId === 'sonic_torpedoes';
-    secHeavyBreachGroup.visible = secId === 'heavy_breach_torpedo';
-    secHexaSwarmGroup.visible = secId === 'hexa_swarm_rack';
+    secondaryMountSlots.forEach((slot, idx) => {
+      const secMountSpec = layout.secondaryMounts[idx];
+      if (!secMountSpec) {
+        slot.root.visible = false;
+        return;
+      }
+      slot.root.visible = true;
+      slot.root.position.set(
+        secMountSpec.pos[0],
+        secMountSpec.pos[1],
+        secMountSpec.pos[2],
+      );
+      slot.root.scale.setScalar(secMountSpec.scale);
+      slot.sonicModel.visible = secId === 'sonic_torpedoes';
+      slot.heavyBreachModel.visible = secId === 'heavy_breach_torpedo';
+      slot.hexaSwarmModel.visible = secId === 'hexa_swarm_rack';
+    });
 
     // 5. Toggle all 8 visible 3D Instrument Modules & scale them by Upgrade Tier (I..III)
     const activeMods = currentLoadoutState.activeUpgrades || [];

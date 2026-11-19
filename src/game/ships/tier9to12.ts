@@ -443,6 +443,25 @@ export function createAbyssalSovereignChassis(
     thrusters.push(fl);
   });
 
+  // Central Dreadnought Fusion Reactor Core & Gilded Containment Ring ahead of Tier 1 Citadel
+  const sovereignReactorCradle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.44, 0.52, 0.24, 14),
+    p.goldGildedMat,
+  );
+  sovereignReactorCradle.position.set(0, 0.44, -1.28);
+  const sovereignReactorCore = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.3, 1),
+    crimsonEmit,
+  );
+  sovereignReactorCore.position.set(0, 0.62, -1.28);
+  const sovereignReactorRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.42, 0.038, 8, 24),
+    goldEmit,
+  );
+  sovereignReactorRing.rotation.x = Math.PI / 2;
+  sovereignReactorRing.position.set(0, 0.62, -1.28);
+  root.add(sovereignReactorCradle, sovereignReactorCore, sovereignReactorRing);
+
   return {
     id: 'abyssal_sovereign',
     root,
@@ -451,6 +470,8 @@ export function createAbyssalSovereignChassis(
     animate: (elapsed, dt, smoothThrottle, abilityActive) => {
       radarNodes[0].rotation.y += dt * 2.2 * smoothThrottle;
       radarNodes[1].rotation.y -= dt * 2.8 * smoothThrottle;
+      sovereignReactorCore.rotation.y += dt * (abilityActive ? 5.6 : 2.1) * smoothThrottle;
+      sovereignReactorRing.rotation.z -= dt * (abilityActive ? 4.4 : 1.7) * smoothThrottle;
       const pulse =
         (abilityActive ? 3.8 : 2.1) +
         Math.sin(elapsed * 7.5) * 0.3 +

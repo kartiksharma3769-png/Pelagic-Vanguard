@@ -253,13 +253,42 @@ export interface CosmeticDefinition {
   accentHex: string;
 }
 
+export type EnemyAiState =
+  | 'patrol'
+  | 'approach'
+  | 'pursue'
+  | 'flank'
+  | 'telegraph'
+  | 'attack'
+  | 'reposition'
+  | 'evade';
+
+export type ReticleVisualState =
+  | 'free'
+  | 'target_aligned'
+  | 'locked_enemy'
+  | 'locked_weakpoint'
+  | 'target_lost';
+
+export type HitConfirmType =
+  | 'none'
+  | 'normal'
+  | 'armor'
+  | 'crit'
+  | 'kill'
+  | 'appendage_sever';
+
 export interface WaveSpawnEvent {
-  progressTrigger: number; // 0.0 to 0.82 before boss at 0.85
+  progressTrigger: number; // 0.0 to 0.85 normalized timeline trigger
   enemyType: EnemyType;
   count: number;
   formation: 'v_wedge' | 'spiral_ring' | 'flank_pair' | 'mine_barrier';
   spread: number;
   isElite?: boolean;
+  isEliteWave?: boolean;
+  phaseNumber?: 1 | 2 | 3 | 4 | 5 | 6;
+  escortType?: EnemyType;
+  escortCount?: number;
 }
 
 export type MissionModeCategory =
@@ -414,6 +443,7 @@ export interface GameSettings {
   touchLayout: TouchLayoutPreset;
   joystickSensitivity: number; // 50..150
   joystickDeadzone: number; // 5..25
+  aimDebugEnabled?: boolean; // Development-only 3D aiming & collider debug overlay (off by default)
 }
 
 export interface LifetimeStats {
@@ -552,4 +582,23 @@ export interface HudSnapshot {
   unlockedStages: StageId[];
   saveData: PlayerSaveData;
   lastMissionResult: LastMissionResult | null;
+  // Enhanced Phase, Wave, Reticle & Hit-Confirmation Telemetry
+  missionPhase: number;
+  missionTotalPhases: number;
+  missionPhaseLabel: string;
+  missionPhaseNumber?: number;
+  missionPhaseTitle?: string;
+  currentWaveIndex: number;
+  totalWavesCount: number;
+  wavesRemainingCount?: number;
+  aliveEnemiesCount: number;
+  remainingMissionEnemies: number;
+  elapsedTimeSeconds?: number;
+  pendingSpawnsCount?: number;
+  reticleState: ReticleVisualState;
+  activeAimTargetLabel: string | null;
+  hitConfirmType: HitConfirmType | null;
+  hitConfirmLabel?: string | null;
+  bossVulnerableWindow?: boolean;
 }
+

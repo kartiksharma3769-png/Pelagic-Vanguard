@@ -191,12 +191,33 @@ export function createVanguardIXChassis(
     thrusters.push(fl);
   });
 
+  // Dorsal Hydro-Fusion Reactor Core Chamber with rotating cyan containment ring
+  const reactorCradle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.28, 0.34, 0.16, 12),
+    p.mats.darkGraphiteTrim,
+  );
+  reactorCradle.position.set(0, 0.28, 0.35);
+  const reactorCore = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.18, 1),
+    cyanEmit,
+  );
+  reactorCore.position.set(0, 0.38, 0.35);
+  const reactorRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.26, 0.028, 8, 20),
+    p.machinedSteelMat,
+  );
+  reactorRing.rotation.x = Math.PI / 2;
+  reactorRing.position.set(0, 0.38, 0.35);
+  root.add(reactorCradle, reactorCore, reactorRing);
+
   return {
     id: 'vanguard_interceptor',
     root,
     wingSpanScale: 1.0,
     thrusters,
-    animate: (elapsed, _dt, smoothThrottle, abilityActive) => {
+    animate: (elapsed, dt, smoothThrottle, abilityActive) => {
+      reactorCore.rotation.y += dt * (abilityActive ? 5.2 : 2.1) * smoothThrottle;
+      reactorRing.rotation.z -= dt * (abilityActive ? 4.4 : 1.8) * smoothThrottle;
       cyanEmit.emissiveIntensity =
         (abilityActive ? 3.2 : 1.7) +
         Math.sin(elapsed * 4.5) * 0.25 +
@@ -372,28 +393,49 @@ export function createMaelstromXIIChassis(
     fin.rotation.z = dir * -0.42;
     root.add(fin);
 
-    // Heavy crimson-amber thruster
+    // Heavy crimson-plasma thruster
     const fl = createRealisticThrusterAssembly(
       p.heatStainedNozzleMat,
       p.machinedSteelMat,
       1.04,
       0xf43f5e,
-      0xf59e0b,
-      0xfb7185,
+      0xe11d48,
+      0xfda4af,
     );
     fl.root.position.set(dir * 1.24, 0.02, 1.98);
     root.add(fl.root);
     thrusters.push(fl);
   });
 
+  // Exposed Dorsal Crimson Overdrive Reactor Chamber with counter-rotating bronze coil
+  const reactorBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.32, 0.38, 0.18, 12),
+    crimsonArmorMat,
+  );
+  reactorBase.position.set(0, 0.36, 0.28);
+  const overdriveReactorCore = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.22, 1),
+    crimsonEmit,
+  );
+  overdriveReactorCore.position.set(0, 0.48, 0.28);
+  const overdriveReactorRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.3, 0.032, 8, 20),
+    p.navalBronzeMat,
+  );
+  overdriveReactorRing.rotation.x = Math.PI / 2;
+  overdriveReactorRing.position.set(0, 0.48, 0.28);
+  root.add(reactorBase, overdriveReactorCore, overdriveReactorRing);
+
   return {
     id: 'leviathan_assault',
     root,
     wingSpanScale: 1.15,
     thrusters,
-    animate: (elapsed, _dt, smoothThrottle, abilityActive) => {
+    animate: (elapsed, dt, smoothThrottle, abilityActive) => {
       const pulse = 1.8 + Math.sin(elapsed * 8.5) * 0.45 + (smoothThrottle - 1) * 1.1;
       crimsonEmit.emissiveIntensity = abilityActive ? pulse * 1.7 : pulse;
+      overdriveReactorCore.rotation.y += dt * (abilityActive ? 6.8 : 2.6) * smoothThrottle;
+      overdriveReactorRing.rotation.z -= dt * (abilityActive ? 5.4 : 2.1) * smoothThrottle;
       energyCoils.forEach((coil, idx) => {
         const s = 1 + Math.sin(elapsed * 12 - idx * 0.9) * 0.045 * smoothThrottle;
         coil.scale.set(s, s, 1);
@@ -544,6 +586,20 @@ export function createNautilusSpectreVIIChassis(
     thrusters.push(fl);
   });
 
+  // Recessed Stealth Phase-Reactor Core beneath faceted dorsal housing
+  const stealthReactorCore = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.2, 1),
+    violetEmit,
+  );
+  stealthReactorCore.position.set(0, 0.28, -0.05);
+  const stealthReactorRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.28, 0.026, 8, 20),
+    tealEmit,
+  );
+  stealthReactorRing.rotation.x = Math.PI / 2;
+  stealthReactorRing.position.set(0, 0.28, -0.05);
+  root.add(stealthReactorCore, stealthReactorRing);
+
   return {
     id: 'echo_tactical',
     root,
@@ -551,6 +607,8 @@ export function createNautilusSpectreVIIChassis(
     thrusters,
     animate: (elapsed, dt, smoothThrottle, abilityActive) => {
       sonarBar.rotation.y += dt * (abilityActive ? 4.8 : 2.1) * smoothThrottle;
+      stealthReactorCore.rotation.y -= dt * (abilityActive ? 5.2 : 1.9);
+      stealthReactorRing.rotation.z += dt * (abilityActive ? 4.5 : 1.6);
       const tuck = abilityActive || smoothThrottle > 1.35 ? 0.22 : 0.0;
       stealthFins[0].rotation.z = 0.18 + tuck;
       stealthFins[1].rotation.z = -0.18 - tuck;
@@ -710,14 +768,35 @@ export function createBathysBastionIVChassis(
     thrusters.push(fl);
   });
 
+  // Central Linked Amber-Cyan Fortress Reactor Core Bridge connecting twin shield domes
+  const centralReactorBridge = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.12, 2.6, 10).rotateZ(Math.PI / 2),
+    p.navalBronzeMat,
+  );
+  centralReactorBridge.position.set(0, 0.68, 0.25);
+  const centralBastionReactor = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.28, 1),
+    amberEmit,
+  );
+  centralBastionReactor.position.set(0, 0.72, 0.25);
+  const centralBastionRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.38, 0.035, 8, 22),
+    cyanEmit,
+  );
+  centralBastionRing.rotation.x = Math.PI / 2;
+  centralBastionRing.position.set(0, 0.72, 0.25);
+  shieldCoreRings.push(centralBastionRing);
+  root.add(centralReactorBridge, centralBastionReactor, centralBastionRing);
+
   return {
     id: 'aegis_guardian',
     root,
     wingSpanScale: 1.22,
     thrusters,
     animate: (elapsed, dt, smoothThrottle, abilityActive) => {
+      centralBastionReactor.rotation.y += dt * (abilityActive ? 4.8 : 1.9);
       shieldCoreRings.forEach((ring, idx) => {
-        ring.rotation.z += dt * (abilityActive ? 5.5 : 1.8) * (idx === 0 ? 1 : -1);
+        ring.rotation.z += dt * (abilityActive ? 5.5 : 1.8) * (idx % 2 === 0 ? 1 : -1);
       });
       cyanEmit.emissiveIntensity =
         (abilityActive ? 3.5 : 1.65) + Math.sin(elapsed * 4.0) * 0.25;

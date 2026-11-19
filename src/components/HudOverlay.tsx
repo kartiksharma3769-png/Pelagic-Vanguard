@@ -392,7 +392,7 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
             );
           })}
 
-          {/* Precision Aiming Reticle */}
+          {/* Precision Aiming Reticle & Hit Confirmation Ticks */}
           <div
             className="pointer-events-none fixed z-30 -translate-x-1/2 -translate-y-1/2"
             style={{
@@ -401,32 +401,168 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
             }}
           >
             <div className="relative flex items-center justify-center">
+              {/* Outer Dynamic Reticle Ring */}
               <div
-                className={`h-10 w-10 rounded-full border transition-transform duration-75 ${
-                  hud.sonarActive
-                    ? 'border-emerald-400/90 scale-110'
-                    : 'border-cyan-400/75'
+                className={`h-11 w-11 rounded-full border transition-all duration-75 ${
+                  hud.reticleState === 'locked_weakpoint'
+                    ? 'border-fuchsia-400/95 scale-90 shadow-[0_0_12px_rgba(232,121,249,0.55)]'
+                    : hud.reticleState === 'locked_enemy'
+                      ? 'border-rose-400/95 scale-95 shadow-[0_0_10px_rgba(251,113,133,0.5)]'
+                      : hud.reticleState === 'target_aligned'
+                        ? 'border-amber-300/95 scale-95 shadow-[0_0_10px_rgba(252,211,77,0.45)]'
+                        : hud.reticleState === 'target_lost'
+                          ? 'border-dashed border-amber-500/80 scale-110 opacity-75'
+                          : hud.sonarActive
+                            ? 'border-emerald-400/90 scale-105'
+                            : 'border-cyan-400/75'
                 }`}
               />
-              <div className="absolute h-1.5 w-1.5 rounded-full bg-cyan-300" />
+
+              {/* Crosshair Cardinal Ticks */}
+              <div
+                className={`absolute -top-2 h-2 w-0.5 ${
+                  hud.reticleState === 'locked_weakpoint'
+                    ? 'bg-fuchsia-300'
+                    : hud.reticleState === 'locked_enemy'
+                      ? 'bg-rose-400'
+                      : hud.reticleState === 'target_aligned'
+                        ? 'bg-amber-300'
+                        : 'bg-cyan-300/80'
+                }`}
+              />
+              <div
+                className={`absolute -bottom-2 h-2 w-0.5 ${
+                  hud.reticleState === 'locked_weakpoint'
+                    ? 'bg-fuchsia-300'
+                    : hud.reticleState === 'locked_enemy'
+                      ? 'bg-rose-400'
+                      : hud.reticleState === 'target_aligned'
+                        ? 'bg-amber-300'
+                        : 'bg-cyan-300/80'
+                }`}
+              />
+              <div
+                className={`absolute -left-2 h-0.5 w-2 ${
+                  hud.reticleState === 'locked_weakpoint'
+                    ? 'bg-fuchsia-300'
+                    : hud.reticleState === 'locked_enemy'
+                      ? 'bg-rose-400'
+                      : hud.reticleState === 'target_aligned'
+                        ? 'bg-amber-300'
+                        : 'bg-cyan-300/80'
+                }`}
+              />
+              <div
+                className={`absolute -right-2 h-0.5 w-2 ${
+                  hud.reticleState === 'locked_weakpoint'
+                    ? 'bg-fuchsia-300'
+                    : hud.reticleState === 'locked_enemy'
+                      ? 'bg-rose-400'
+                      : hud.reticleState === 'target_aligned'
+                        ? 'bg-amber-300'
+                        : 'bg-cyan-300/80'
+                }`}
+              />
+
+              {/* Non-occluding Diagonal Hit Confirmation Ticks */}
+              {hud.hitConfirmType !== 'none' && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div
+                    className={`h-8 w-8 rotate-45 border-2 transition-transform duration-75 ${
+                      hud.hitConfirmType === 'kill'
+                        ? 'border-rose-500 scale-125 shadow-[0_0_12px_rgba(244,63,94,0.8)]'
+                        : hud.hitConfirmType === 'appendage_sever'
+                          ? 'border-fuchsia-400 scale-125 shadow-[0_0_12px_rgba(232,121,249,0.85)]'
+                          : hud.hitConfirmType === 'crit'
+                            ? 'border-amber-300 scale-110 shadow-[0_0_10px_rgba(252,211,77,0.75)]'
+                            : hud.hitConfirmType === 'armor'
+                              ? 'border-slate-300/90 scale-95'
+                              : 'border-cyan-200 scale-100'
+                    }`}
+                  />
+                </div>
+              )}
+
+              {/* Authoritative Center Convergence Dot */}
+              <div
+                className={`absolute h-1.5 w-1.5 rounded-full ${
+                  hud.reticleState === 'locked_weakpoint'
+                    ? 'bg-fuchsia-300'
+                    : hud.reticleState === 'locked_enemy'
+                      ? 'bg-rose-400'
+                      : hud.reticleState === 'target_aligned'
+                        ? 'bg-amber-300'
+                        : 'bg-cyan-300'
+                }`}
+              />
+
+              {/* Target Lock / Hit Status Micro Readout */}
+              {(hud.activeAimTargetLabel ||
+                hud.reticleState === 'target_lost' ||
+                hud.hitConfirmType === 'armor' ||
+                hud.hitConfirmType === 'crit' ||
+                hud.hitConfirmType === 'kill' ||
+                hud.hitConfirmType === 'appendage_sever') && (
+                <div className="absolute top-7 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-slate-950/75 text-cyan-100 drop-shadow">
+                  {hud.hitConfirmType === 'appendage_sever'
+                    ? 'APPENDAGE SEVERED'
+                    : hud.hitConfirmType === 'kill'
+                      ? 'TARGET ELIMINATED'
+                      : hud.hitConfirmType === 'crit'
+                        ? 'WEAKPOINT CRIT'
+                        : hud.hitConfirmType === 'armor'
+                          ? 'ARMOR DEFLECT'
+                          : hud.reticleState === 'target_lost'
+                            ? 'LOCK LOST'
+                            : hud.activeAimTargetLabel}
+                </div>
+              )}
             </div>
           </div>
 
           {/* Mobile Top Visor Header */}
           <header className="relative z-10 flex flex-col gap-2 bg-gradient-to-b from-slate-950/90 via-slate-950/45 to-transparent px-3 sm:px-5 pt-2.5 pb-4 pt-safe px-safe">
             <div className="flex items-start justify-between gap-2 sm:gap-4">
-              {/* Left: Mission & Objective */}
-              <div className="space-y-0.5 min-w-0 max-w-[54%] sm:max-w-md">
-                <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-cyan-300 font-medium">
+              {/* Left: Mission, Phase, Wave, Hostiles & Objective */}
+              <div className="space-y-0.5 min-w-0 max-w-[58%] sm:max-w-lg">
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] sm:text-xs text-cyan-300 font-medium">
                   <span className="font-display text-xs sm:text-sm font-semibold text-white tracking-tight truncate">
                     {hud.missionTitle}
                   </span>
                   <span aria-hidden="true">·</span>
-                  <span className="tabular-nums text-slate-300 shrink-0">
-                    {hud.depthMeters.toLocaleString()}m
+                  <span className="tabular-nums text-cyan-200 font-semibold shrink-0">
+                    Phase {hud.missionPhase}/{hud.missionTotalPhases}
                   </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums text-slate-200 shrink-0">
+                    Wave {hud.currentWaveIndex}/{hud.totalWavesCount}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums text-rose-300 font-semibold shrink-0">
+                    Hostiles: {hud.remainingMissionEnemies}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums text-slate-300 shrink-0">
+                    {Math.floor(hud.stageElapsedSeconds / 60)}:
+                    {String(hud.stageElapsedSeconds % 60).padStart(2, '0')}
+                  </span>
+                  {save.settings.aimDebugEnabled && (
+                    <button
+                      onClick={() =>
+                        onUpdateSettings({
+                          aimDebugEnabled: !save.settings.aimDebugEnabled,
+                        })
+                      }
+                      className="pointer-events-auto ml-1 rounded bg-emerald-500/25 px-1.5 py-0.2 text-[9px] font-bold uppercase text-emerald-300 ring-1 ring-emerald-400/50 cursor-pointer"
+                    >
+                      3D AIM DEBUG ON
+                    </button>
+                  )}
                 </div>
                 <div className="text-[11px] sm:text-xs text-slate-200 font-medium drop-shadow truncate">
+                  <span className="text-cyan-300/90 font-semibold mr-1.5">
+                    [{hud.missionPhaseLabel}]
+                  </span>
                   {hud.flightSchoolStepText || hud.primaryObjectiveText}
                   {hud.objectiveProgressTarget > 1 && (
                     <span className="ml-1 text-cyan-300 font-semibold tabular-nums">
@@ -459,61 +595,64 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
                 </div>
 
                 {!save.settings.touchControlsEnabled && (
-                  <>
-                    <button
-                      onClick={onTriggerShipAbility}
-                      aria-label={`Activate ${hud.activeAbilityName}`}
-                      className={`pointer-events-auto min-h-[44px] flex items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold transition cursor-pointer tabular-nums ${
-                        hud.activeAbilityActive
-                          ? 'bg-fuchsia-500/35 text-white ring-1 ring-fuchsia-300'
-                          : hud.activeAbilityCooldown > 0
-                            ? 'bg-slate-900/80 text-slate-400 ring-1 ring-white/10'
-                            : 'bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/55 hover:bg-fuchsia-500/30'
-                      }`}
-                    >
-                      <Flame className="h-3.5 w-3.5 shrink-0" />
-                      <span className="hidden sm:inline max-w-[130px] truncate">
-                        [R] {hud.activeAbilityName}
+                  <button
+                    onClick={onTriggerShipAbility}
+                    aria-label={`Activate ${hud.activeAbilityName}`}
+                    className={`pointer-events-auto min-h-[40px] flex items-center gap-1.5 rounded-full px-3 text-xs font-bold transition cursor-pointer tabular-nums ${
+                      hud.activeAbilityActive
+                        ? 'bg-fuchsia-500/35 text-white ring-1 ring-fuchsia-300'
+                        : hud.activeAbilityCooldown > 0
+                          ? 'bg-slate-900/80 text-slate-400 ring-1 ring-white/10'
+                          : 'bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/55 hover:bg-fuchsia-500/30'
+                    }`}
+                  >
+                    <Flame className="h-3.5 w-3.5 shrink-0" />
+                    <span className="hidden md:inline max-w-[130px] truncate">
+                      [R] {hud.activeAbilityName}
+                    </span>
+                    {(hud.activeAbilityActive ||
+                      hud.activeAbilityCooldown > 0) && (
+                      <span>
+                        {hud.activeAbilityActive
+                          ? `${hud.activeAbilityRemainingSeconds.toFixed(1)}s`
+                          : `${hud.activeAbilityCooldownSeconds}s`}
                       </span>
-                      {(hud.activeAbilityActive ||
-                        hud.activeAbilityCooldown > 0) && (
-                        <span>
-                          {hud.activeAbilityActive
-                            ? `${hud.activeAbilityRemainingSeconds.toFixed(1)}s`
-                            : `${hud.activeAbilityCooldownSeconds}s`}
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      onClick={handleToggleAutoFire}
-                      aria-label="Toggle Auto-Fire"
-                      className={`pointer-events-auto min-h-[44px] flex items-center gap-1 rounded-xl px-2.5 text-xs font-bold transition cursor-pointer ${
-                        save.settings.autoFire
-                          ? 'bg-emerald-500/25 text-emerald-200 ring-1 ring-emerald-400/50'
-                          : 'bg-slate-900/80 text-slate-300 ring-1 ring-white/15'
-                      }`}
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">
-                        {save.settings.autoFire ? 'Auto' : 'Manual'}
-                      </span>
-                    </button>
-                    <button
-                      onClick={onToggleCamera}
-                      aria-label="Toggle Camera View"
-                      className="pointer-events-auto min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-slate-900/80 ring-1 ring-white/15 text-slate-200 transition cursor-pointer"
-                    >
-                      <Camera className="h-4 w-4 text-cyan-300" />
-                    </button>
-                  </>
+                    )}
+                  </button>
                 )}
+
+                <button
+                  onClick={handleToggleAutoFire}
+                  aria-label="Toggle Auto-Fire"
+                  className={`pointer-events-auto min-h-[40px] min-w-[40px] flex items-center justify-center gap-1 rounded-full px-2.5 text-[11px] font-bold transition active:scale-95 cursor-pointer ${
+                    save.settings.autoFire
+                      ? 'bg-emerald-500/25 text-emerald-200 ring-1 ring-emerald-400/55'
+                      : 'bg-slate-900/80 text-slate-300 ring-1 ring-white/15'
+                  }`}
+                >
+                  <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden sm:inline">
+                    {save.settings.autoFire ? 'Auto' : 'Manual'}
+                  </span>
+                </button>
+
+                <button
+                  onClick={onToggleCamera}
+                  aria-label="Toggle Camera View"
+                  className="pointer-events-auto min-h-[40px] min-w-[40px] flex items-center justify-center gap-1 rounded-full bg-slate-900/80 ring-1 ring-white/15 px-2.5 text-[11px] font-semibold text-slate-200 transition active:scale-95 cursor-pointer"
+                >
+                  <Camera className="h-3.5 w-3.5 text-cyan-300 shrink-0" />
+                  <span className="hidden md:inline">
+                    {cameraMode === 'chase' ? 'Chase' : 'Cockpit'}
+                  </span>
+                </button>
 
                 <button
                   onClick={onPauseGame}
                   aria-label="Pause Mission"
-                  className="pointer-events-auto min-h-[44px] min-w-[44px] flex items-center justify-center gap-1.5 rounded-xl bg-slate-900/85 hover:bg-slate-800/90 ring-1 ring-white/15 px-3 text-xs font-semibold text-white transition active:scale-95 cursor-pointer"
+                  className="pointer-events-auto min-h-[40px] min-w-[40px] flex items-center justify-center gap-1 rounded-full bg-slate-900/88 hover:bg-slate-800/90 ring-1 ring-white/20 px-3 text-xs font-semibold text-white transition active:scale-95 cursor-pointer"
                 >
-                  <Pause className="h-4 w-4" />
+                  <Pause className="h-3.5 w-3.5 shrink-0" />
                   <span className="hidden sm:inline">Pause</span>
                 </button>
               </div>

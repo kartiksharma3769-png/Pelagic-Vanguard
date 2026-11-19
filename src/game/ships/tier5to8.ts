@@ -170,12 +170,28 @@ export function createAbyssalTalonChassis(
     thrusters.push(fl);
   });
 
+  // High-RPM Emerald Centrifuge Reactor Core along central dorsal spine
+  const talonReactorCore = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.22, 1),
+    limeEmit,
+  );
+  talonReactorCore.position.set(0, 0.34, -0.12);
+  const talonReactorRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.32, 0.03, 8, 20),
+    emeraldEmit,
+  );
+  talonReactorRing.rotation.x = Math.PI / 2;
+  talonReactorRing.position.set(0, 0.34, -0.12);
+  root.add(talonReactorCore, talonReactorRing);
+
   return {
     id: 'abyssal_talon',
     root,
     wingSpanScale: 1.14,
     thrusters,
-    animate: (elapsed, _dt, smoothThrottle, abilityActive) => {
+    animate: (elapsed, dt, smoothThrottle, abilityActive) => {
+      talonReactorCore.rotation.y += dt * (abilityActive ? 6.5 : 2.6) * smoothThrottle;
+      talonReactorRing.rotation.z -= dt * (abilityActive ? 5.2 : 2.1) * smoothThrottle;
       const pVal =
         (abilityActive ? 3.2 : 1.75) +
         Math.sin(elapsed * 6.5) * 0.35 +
@@ -455,12 +471,28 @@ export function createRiftMantaChassis(
   root.add(centerFl.root);
   thrusters.push(centerFl);
 
+  // Dorsal Singularity Phase Reactor Lens at central manta disc
+  const mantaReactorCore = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.24, 1),
+    violetEmit,
+  );
+  mantaReactorCore.position.set(0, 0.3, 0.22);
+  const mantaReactorRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.38, 0.032, 8, 24),
+    tealEmit,
+  );
+  mantaReactorRing.rotation.x = Math.PI / 2;
+  mantaReactorRing.position.set(0, 0.3, 0.22);
+  root.add(mantaReactorCore, mantaReactorRing);
+
   return {
     id: 'rift_manta',
     root,
     wingSpanScale: 1.34,
     thrusters,
-    animate: (elapsed, _dt, smoothThrottle, abilityActive) => {
+    animate: (elapsed, dt, smoothThrottle, abilityActive) => {
+      mantaReactorCore.rotation.y += dt * (abilityActive ? 6.2 : 2.4);
+      mantaReactorRing.rotation.z -= dt * (abilityActive ? 5.4 : 2.0);
       const shimmer =
         (abilityActive ? 3.5 : 1.7) +
         Math.sin(elapsed * 7.0) * 0.35 +
@@ -597,12 +629,33 @@ export function createLeviathanBreakerChassis(
     thrusters.push(fl);
   });
 
+  // Exposed Molten-Orange Siege Capacitor Reactor Core nested ahead of aft bulkhead
+  const siegeReactorCradle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.42, 0.48, 0.22, 12),
+    p.navalBronzeMat,
+  );
+  siegeReactorCradle.position.set(0, 0.42, 0.72);
+  const siegeReactorCore = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.28, 1),
+    siegeOrangeEmit,
+  );
+  siegeReactorCore.position.set(0, 0.56, 0.72);
+  const siegeReactorRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.38, 0.038, 8, 22),
+    floodAmberEmit,
+  );
+  siegeReactorRing.rotation.x = Math.PI / 2;
+  siegeReactorRing.position.set(0, 0.56, 0.72);
+  root.add(siegeReactorCradle, siegeReactorCore, siegeReactorRing);
+
   return {
     id: 'leviathan_breaker',
     root,
     wingSpanScale: 1.26,
     thrusters,
-    animate: (elapsed, _dt, smoothThrottle, abilityActive) => {
+    animate: (elapsed, dt, smoothThrottle, abilityActive) => {
+      siegeReactorCore.rotation.y += dt * (abilityActive ? 5.8 : 2.2) * smoothThrottle;
+      siegeReactorRing.rotation.z -= dt * (abilityActive ? 4.6 : 1.8) * smoothThrottle;
       const pulse =
         (abilityActive ? 3.8 : 2.1) +
         Math.sin(elapsed * 6.0) * 0.35 +

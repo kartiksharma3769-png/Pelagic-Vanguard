@@ -8,19 +8,23 @@ import {
   ControlScheme,
   CosmeticId,
   DifficultyId,
+  EnemyAiState,
   EnemyType,
   GameSettings,
   GameStateMode,
+  HitConfirmType,
   HudSnapshot,
   LastMissionResult,
   MedalRank,
   PlayerSaveData,
+  ReticleVisualState,
   ScreenLockTarget,
   ShipActiveAbilityId,
   ShipClassId,
   ShipRarity,
   StageId,
   UpgradeId,
+  WaveSpawnEvent,
   WeaponId,
 } from '../game/types';
 import {
@@ -55,6 +59,13 @@ import {
   createVanguardShip,
 } from '../game/models';
 import { soundEngine } from '../game/audio';
+import {
+  AimableColliderTarget,
+  checkSweptSphereHit,
+  computeAuthoritativeAimState,
+  computeMuzzleShotVectors,
+  evaluateMissionStateAndCompletion,
+} from '../game/combatSolver';
 
 // Reusable module-scope math objects (Zero GC in render loop)
 const _vec3A = new THREE.Vector3();
@@ -72,6 +83,8 @@ interface EnemyEntity {
   id: number;
   active: boolean;
   type: EnemyType;
+  isElite: boolean;
+  aiState: EnemyAiState;
   group: THREE.Group;
   coreMesh: THREE.Mesh;
   telegraphRing: THREE.Mesh;
@@ -87,6 +100,8 @@ interface EnemyEntity {
   baseX: number;
   baseY: number;
   velZ: number;
+  flankSign: number;
+  evadeTimer: number;
   radius: number;
   locked: boolean;
 }
@@ -95,9 +110,12 @@ interface ProjectileEntity {
   active: boolean;
   isPlayer: boolean;
   isTorpedo: boolean;
+  isGuidedEnemyTorpedo?: boolean;
   mesh: THREE.Object3D;
   pos: THREE.Vector3;
+  prevPos: THREE.Vector3;
   vel: THREE.Vector3;
+  radius: number;
   targetEnemyId: number | null;
   damage: number;
   life: number;
@@ -609,7 +627,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     }
 
     // 8. Pooled Projectiles (Composite 3D Fire Bolts, Finned Homing Torpedoes, Enemy Bio-Plasma)
-    const PROJECTILE_POOL_SIZE = 90;
+    const PROJECTILE_POOL_SIZE = 100;
     const enemyPlasmaGeo = new THREE.OctahedronGeometry(0.42, 1);
 
     const projectiles: ProjectileEntity[] = [];
@@ -627,13 +645,122 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         active: false,
         isPlayer: !isEnemySlot,
         isTorpedo: isTorpSlot,
+        isGuidedEnemyTorpedo: false,
         mesh,
         pos: new THREE.Vector3(),
+        prevPos: new THREE.Vector3(),
         vel: new THREE.Vector3(),
+        radius: isTorpSlot ? 0.95 : isEnemySlot ? 0.45 : 0.75,
         targetEnemyId: null,
         damage: 25,
         life: 0,
       });
+    }
+
+    // 8b. Development-Only 3D Aiming & Hitbox Debug Visualizer Group (Disabled by default)
+    const aimDebugGroup = new THREE.Group();
+    aimDebugGroup.visible = false;
+    scene.add(aimDebugGroup);
+
+    const debugRayMat = new THREE.LineBasicMaterial({
+      color: 0x22d3ee,
+      transparent: true,
+      opacity: 0.78,
+      depthTest: false,
+    });
+    const debugRayGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(),
+      new THREE.Vector3(0, 0, -85),
+    ]);
+    const debugRayLine = new THREE.Line(debugRayGeo, debugRayMat);
+    aimDebugGroup.add(debugRayLine);
+
+    const debugAimSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.65, 12, 10),
+      new THREE.MeshBasicMaterial({
+        color: 0xfbbf24,
+        wireframe: true,
+        depthTest: false,
+      }),
+    );
+    aimDebugGroup.add(debugAimSphere);
+
+    const debugMuzzleMat = new THREE.MeshBasicMaterial({
+      color: 0x10b981,
+      depthTest: false,
+    });
+    const debugMuzzleLineMat = new THREE.LineBasicMaterial({
+      color: 0x34d399,
+      transparent: true,
+      opacity: 0.72,
+      depthTest: false,
+    });
+    const debugMuzzleSpheres: THREE.Mesh[] = [];
+    const debugMuzzleLines: THREE.Line[] = [];
+    for (let m = 0; m < 4; m++) {
+      const mSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 8, 8),
+        debugMuzzleMat,
+      );
+      mSphere.visible = false;
+      aimDebugGroup.add(mSphere);
+      debugMuzzleSpheres.push(mSphere);
+
+      const mLineGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(),
+        new THREE.Vector3(),
+      ]);
+      const mLine = new THREE.Line(mLineGeo, debugMuzzleLineMat);
+      mLine.visible = false;
+      aimDebugGroup.add(mLine);
+      debugMuzzleLines.push(mLine);
+    }
+
+    const debugVelLineMat = new THREE.LineBasicMaterial({
+      color: 0xf472b6,
+      transparent: true,
+      opacity: 0.85,
+      depthTest: false,
+    });
+    const debugVelLines: THREE.Line[] = [];
+    for (let v = 0; v < 16; v++) {
+      const vGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(),
+        new THREE.Vector3(),
+      ]);
+      const vLine = new THREE.Line(vGeo, debugVelLineMat);
+      vLine.visible = false;
+      aimDebugGroup.add(vLine);
+      debugVelLines.push(vLine);
+    }
+
+    const debugHitboxMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+    });
+    const debugHitboxGeo = new THREE.SphereGeometry(1, 12, 10);
+    const debugHitboxSpheres: THREE.Mesh[] = [];
+    for (let h = 0; h < 18; h++) {
+      const hMesh = new THREE.Mesh(debugHitboxGeo, debugHitboxMat);
+      hMesh.visible = false;
+      aimDebugGroup.add(hMesh);
+      debugHitboxSpheres.push(hMesh);
+    }
+
+    function updateLineEndpoints(
+      line: THREE.Line,
+      start: THREE.Vector3,
+      end: THREE.Vector3,
+    ) {
+      const posAttr = line.geometry.getAttribute(
+        'position',
+      ) as THREE.BufferAttribute;
+      posAttr.setXYZ(0, start.x, start.y, start.z);
+      posAttr.setXYZ(1, end.x, end.y, end.z);
+      posAttr.needsUpdate = true;
     }
 
     // 9. Pooled Pickups (Hull Repair & Luciferin Shield Cells)
@@ -852,6 +979,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       vortexGroup.visible = false;
       repairDroneGroup.visible = false;
       attackDroneGroup.visible = false;
+      aimDebugGroup.visible = false;
       arcBeams.forEach((b) => {
         b.visible = false;
       });
@@ -915,12 +1043,41 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     }
     applyAudioAndGraphicsSettings();
 
+    const MAX_ACTIVE_ENEMIES = 10;
+
     const sim = {
       stageId: 1 as StageId,
       missionId: 's1_m1_reef_patrol',
       stageElapsed: 0,
+      waveScheduleElapsed: 0,
+      reinforcementWavesSpawned: 0,
       stageProgress: 0,
       waveCursor: 0,
+      waveClearAdvanceTimer: 0,
+      pendingSpawns: [] as {
+        enemyType: EnemyType;
+        sx: number;
+        sy: number;
+        sz: number;
+        isElite: boolean;
+        patternPhase: number;
+      }[],
+      sortieCompleted: false,
+      bossSpawned: false,
+      bossDefeated: false,
+      bossIntroTimer: 0,
+      bossVulnerableTimer: 0,
+      missionPhase: 1 as 1 | 2 | 3 | 4 | 5 | 6,
+      missionPhaseLabel: 'PHASE 1/6 · DEPLOYMENT',
+      aimPointWorld: new THREE.Vector3(0, 0, -85),
+      reticleState: 'free' as ReticleVisualState,
+      activeAimTargetId: null as number | null,
+      activeAimTargetLabel: null as string | null,
+      targetLostTimer: 0,
+      prevLockedCount: 0,
+      hitConfirmType: 'none' as HitConfirmType,
+      hitConfirmTimer: 0,
+      hitConfirmLabel: null as string | null,
       playerX: 0,
       playerY: 0,
       playerVelX: 0,
@@ -1006,6 +1163,12 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       keyLightIntensity: 2.4,
       depthStratumName: STAGE_CONFIGS[1].stratumLabels[0],
     };
+
+    function triggerHitConfirmation(type: HitConfirmType, label: string) {
+      sim.hitConfirmType = type;
+      sim.hitConfirmLabel = label;
+      sim.hitConfirmTimer = type === 'kill' || type === 'appendage_sever' ? 0.55 : 0.32;
+    }
 
     function updateDepthAtmosphere(
       stageId: StageId,
@@ -1120,90 +1283,184 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       updateDepthAtmosphere(stageId, 0, 0, 1);
     }
 
-    function spawnWave(
+    function instantiateEnemyEntity(spec: {
+      enemyType: EnemyType;
+      sx: number;
+      sy: number;
+      sz: number;
+      isElite: boolean;
+      patternPhase: number;
+    }) {
+      const { enemyType, sx, sy, sz, isElite, patternPhase } = spec;
+      const built = createEnemyMesh(enemyType, mats);
+      built.group.position.set(sx, sy, sz);
+      if (isElite && enemyType !== 'cruiser') {
+        built.group.scale.setScalar(1.16);
+      }
+      scene.add(built.group);
+
+      const hpMap: Record<EnemyType, number> = {
+        skimmer: 52,
+        jelly: 72,
+        cruiser: 175,
+        manta: 92,
+        hazard_mine: 42,
+      };
+      const baseHexMap: Record<EnemyType, number> = {
+        skimmer: 0x06b6d4,
+        jelly: 0xd946ef,
+        cruiser: 0xf59e0b,
+        manta: 0x10b981,
+        hazard_mine: 0xf43f5e,
+      };
+
+      const diffHpMult =
+        DIFFICULTY_CONFIGS[playerSave.selectedDifficulty].enemyHpMult;
+      const eliteMult = isElite && enemyType !== 'cruiser' && enemyType !== 'manta' ? 1.35 : 1.0;
+      const scaledEnemyHp = Math.round(
+        hpMap[enemyType] *
+          (1 + (sim.stageId - 1) * 0.22) *
+          diffHpMult *
+          eliteMult,
+      );
+
+      enemies.push({
+        id: nextEntityId++,
+        active: true,
+        type: enemyType,
+        isElite,
+        aiState: 'approach',
+        group: built.group,
+        coreMesh: built.coreMesh,
+        telegraphRing: built.telegraphRing,
+        hp: scaledEnemyHp,
+        maxHp: scaledEnemyHp,
+        baseColorHex: baseHexMap[enemyType],
+        hitFlashTimer: 0,
+        fireTimer: 1.6 + (nextEntityId % 3) * 0.65,
+        telegraphTimer: 0,
+        isFiringWindup: false,
+        spawnTime: sim.stageElapsed,
+        patternPhase,
+        baseX: sx,
+        baseY: sy,
+        velZ:
+          enemyType === 'cruiser'
+            ? 13.5
+            : enemyType === 'hazard_mine'
+              ? 20
+              : enemyType === 'manta'
+                ? 17.5
+                : 16.5,
+        flankSign: nextEntityId % 2 === 0 ? 1 : -1,
+        evadeTimer: 0,
+        radius:
+          enemyType === 'cruiser'
+            ? 3.1
+            : enemyType === 'manta'
+              ? 2.45
+              : enemyType === 'jelly'
+                ? 2.35
+                : 2.2,
+        locked: false,
+      });
+    }
+
+    function flushPendingSpawns() {
+      while (
+        sim.pendingSpawns.length > 0 &&
+        enemies.length < MAX_ACTIVE_ENEMIES
+      ) {
+        const nextSpec = sim.pendingSpawns.shift();
+        if (nextSpec) {
+          instantiateEnemyEntity(nextSpec);
+        }
+      }
+    }
+
+    function queueFormationBatch(
       enemyType: EnemyType,
       count: number,
       formation: 'v_wedge' | 'spiral_ring' | 'flank_pair' | 'mine_barrier',
       spread: number,
+      isEliteOverride: boolean,
+      zStartOffset: number = 0,
     ) {
       for (let i = 0; i < count; i++) {
-        const built = createEnemyMesh(enemyType, mats);
         let sx = 0;
         let sy = 0;
-        const sz = -105 - i * 9;
+        const sz = -104 - zStartOffset - i * 8.5;
 
         if (formation === 'v_wedge') {
           const offset = i - (count - 1) / 2;
           sx = offset * (spread * 0.35);
-          sy = Math.abs(offset) * 2.5 - 2;
+          sy = Math.abs(offset) * 2.2 - 1.8;
         } else if (formation === 'spiral_ring') {
-          const angle = (i / count) * Math.PI * 2;
-          sx = Math.cos(angle) * (spread * 0.55);
-          sy = Math.sin(angle) * (spread * 0.42);
+          const angle = (i / Math.max(1, count)) * Math.PI * 2;
+          sx = Math.cos(angle) * (spread * 0.52);
+          sy = Math.sin(angle) * (spread * 0.38);
         } else if (formation === 'flank_pair') {
-          sx = (i % 2 === 0 ? -1 : 1) * (spread * 0.55);
-          sy = ((i % 3) - 1) * 4.5;
+          sx = (i % 2 === 0 ? -1 : 1) * (spread * 0.52);
+          sy = ((i % 3) - 1) * 3.8;
         } else {
-          sx = ((i / Math.max(1, count - 1)) - 0.5) * spread * 1.2;
-          sy = (Math.random() - 0.5) * 16;
+          sx = ((i / Math.max(1, count - 1)) - 0.5) * spread * 1.1;
+          sy = (((i * 5) % 9) - 4) * 1.65;
         }
 
-        built.group.position.set(sx, sy, sz);
-        scene.add(built.group);
+        sx = THREE.MathUtils.clamp(sx, -14.5, 14.5);
+        sy = THREE.MathUtils.clamp(sy, -7.5, 7.5);
 
-        const hpMap: Record<EnemyType, number> = {
-          skimmer: 48,
-          jelly: 65,
-          cruiser: 155,
-          manta: 82,
-          hazard_mine: 40,
-        };
-        const baseHexMap: Record<EnemyType, number> = {
-          skimmer: 0x06b6d4,
-          jelly: 0xd946ef,
-          cruiser: 0xf59e0b,
-          manta: 0x10b981,
-          hazard_mine: 0xf43f5e,
-        };
-
-        const diffHpMult =
-          DIFFICULTY_CONFIGS[playerSave.selectedDifficulty].enemyHpMult;
-        const scaledEnemyHp = Math.round(
-          hpMap[enemyType] * (1 + (sim.stageId - 1) * 0.2) * diffHpMult,
-        );
-
-        enemies.push({
-          id: nextEntityId++,
-          active: true,
-          type: enemyType,
-          group: built.group,
-          coreMesh: built.coreMesh,
-          telegraphRing: built.telegraphRing,
-          hp: scaledEnemyHp,
-          maxHp: scaledEnemyHp,
-          baseColorHex: baseHexMap[enemyType],
-          hitFlashTimer: 0,
-          fireTimer: 1.8 + (i % 3) * 0.75,
-          telegraphTimer: 0,
-          isFiringWindup: false,
-          spawnTime: sim.stageElapsed,
-          patternPhase: i * 1.1,
-          baseX: sx,
-          baseY: sy,
-          velZ: enemyType === 'cruiser' ? 14 : enemyType === 'hazard_mine' ? 22 : 19,
-          radius: enemyType === 'cruiser' ? 2.8 : 2.1,
-          locked: false,
+        sim.pendingSpawns.push({
+          enemyType,
+          sx,
+          sy,
+          sz,
+          isElite:
+            isEliteOverride ||
+            enemyType === 'cruiser' ||
+            enemyType === 'manta',
+          patternPhase: i * 1.15,
         });
       }
     }
 
+    function spawnWave(wave: WaveSpawnEvent) {
+      const isElite = Boolean(wave.isElite || wave.isEliteWave);
+      queueFormationBatch(
+        wave.enemyType,
+        wave.count,
+        wave.formation,
+        wave.spread,
+        isElite,
+        0,
+      );
+      if (wave.escortType && wave.escortCount && wave.escortCount > 0) {
+        queueFormationBatch(
+          wave.escortType,
+          wave.escortCount,
+          'flank_pair',
+          Math.max(12, wave.spread * 0.85),
+          isElite,
+          14,
+        );
+      }
+      flushPendingSpawns();
+    }
+
     function spawnStageBoss(stageId: StageId) {
+      if (sim.bossSpawned && bossObj && bossObj.active) return;
+      sim.bossSpawned = true;
+      sim.bossDefeated = false;
+      sim.bossIntroTimer = 2.6;
+      sim.bossVulnerableTimer = 0;
+
       const cfg = STAGE_CONFIGS[stageId];
       const diffHpMult =
         DIFFICULTY_CONFIGS[playerSave.selectedDifficulty].enemyHpMult;
       const built = createBossMesh(stageId, mats);
-      built.group.position.set(0, 2, -120);
+      built.group.position.set(0, 2, -118);
       scene.add(built.group);
+      built.group.updateMatrixWorld(true);
 
       const runtimeAppendages: BossAppendageRuntime[] = built.appendages.map(
         (node) => {
@@ -1216,8 +1473,8 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             destroyed: false,
             hitFlashTimer: 0,
             worldPos: new THREE.Vector3()
-              .copy(built.group.position)
-              .add(node.localOffset),
+              .copy(node.localOffset)
+              .applyMatrix4(built.group.matrixWorld),
           };
         },
       );
@@ -1242,8 +1499,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         fluidDripTimer: 0,
         attackTimer: 2.8,
         telegraphTimer: 0,
-        telegraphLabel:
-          'LEVIATHAN DETECTED — TARGET APPENDAGES TO WEAKEN CORE',
+        telegraphLabel: `LEVIATHAN EMERGENCE: ${cfg.bossName.toUpperCase()} — SEVER APPENDAGES TO EXPOSE CORE`,
         attackPatternIndex: 0,
         locked: false,
       };
@@ -1277,6 +1533,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           return sim.maxMultiplierReached >= 4;
         case 's2_m3_vulcanus_finale':
           return sim.appendagesSeveredThisSortie >= 2 && hullRatio >= 0.5;
+        case 's3_m1_hadal_breach':
         case 's3_m1_hadal_descent':
           return sim.sonarPulsesUsedThisSortie >= 3 && hullRatio >= 0.6;
         case 's3_m2_sanctum_convoy':
@@ -1293,6 +1550,9 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     }
 
     function finalizeSortie(victory: boolean) {
+      if (sim.sortieCompleted) return;
+      sim.sortieCompleted = true;
+
       const m = getActiveMission();
       const diffCfg = DIFFICULTY_CONFIGS[playerSave.selectedDifficulty];
       const existingRec = playerSave.missionRecords[m.id];
@@ -1396,8 +1656,11 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       startStage(m.stageId, true);
       if (m.objectiveType === 'boss_finale') {
         if (m.category === 'boss_rematch') {
-          sim.stageProgress = 0.9;
-          spawnStageBoss(m.stageId);
+          // Spawn initial escort vanguard wave, and spawn the Leviathan boss if no waves are defined
+          if (m.waves.length === 0) {
+            sim.stageProgress = 0.88;
+            spawnStageBoss(m.stageId);
+          }
         }
       }
     }
@@ -1413,8 +1676,28 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         if (defaultForStage) sim.missionId = defaultForStage.id;
       }
       sim.stageElapsed = 0;
+      sim.waveScheduleElapsed = 0;
+      sim.reinforcementWavesSpawned = 0;
       sim.stageProgress = 0;
       sim.waveCursor = 0;
+      sim.waveClearAdvanceTimer = 0;
+      sim.pendingSpawns = [];
+      sim.sortieCompleted = false;
+      sim.bossSpawned = false;
+      sim.bossDefeated = false;
+      sim.bossIntroTimer = 0;
+      sim.bossVulnerableTimer = 0;
+      sim.missionPhase = 1;
+      sim.missionPhaseLabel = 'PHASE 1/6 · DEPLOYMENT';
+      sim.aimPointWorld.set(0, 0, -85);
+      sim.reticleState = 'free';
+      sim.activeAimTargetId = null;
+      sim.activeAimTargetLabel = null;
+      sim.targetLostTimer = 0;
+      sim.prevLockedCount = 0;
+      sim.hitConfirmType = 'none';
+      sim.hitConfirmTimer = 0;
+      sim.hitConfirmLabel = null;
       sim.playerX = 0;
       sim.playerY = 0;
       sim.playerVelX = 0;
@@ -1920,6 +2203,148 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       beam.visible = true;
     }
 
+    function eliminateDefeatedEnemy(
+      e: EnemyEntity,
+      enemyIndex: number,
+      isHeavyImpact: boolean = false,
+    ) {
+      if (!e.active) return;
+      e.active = false;
+      scene.remove(e.group);
+      disposeGroupGeometries(e.group);
+      const wasLocked = sim.lockedTargetIds.includes(e.id);
+      sim.lockedTargetIds = sim.lockedTargetIds.filter((id) => id !== e.id);
+      if (wasLocked && sim.lockedTargetIds.length === 0) {
+        sim.targetLostTimer = 0.45;
+      }
+      triggerHitConfirmation('kill', `${e.type.toUpperCase()} DESTROYED`);
+      spawnParticleBurst(e.group.position, e.baseColorHex, 26, 22);
+      if (Math.random() < 0.28) {
+        spawnPickup(e.group.position);
+      }
+      if (enemyIndex >= 0 && enemyIndex < enemies.length && enemies[enemyIndex] === e) {
+        enemies.splice(enemyIndex, 1);
+      } else {
+        const idx = enemies.indexOf(e);
+        if (idx !== -1) enemies.splice(idx, 1);
+      }
+
+      sim.enemiesDefeated++;
+      if (e.isElite || e.type === 'cruiser' || e.type === 'manta') {
+        sim.elitesDefeated++;
+        playerSave.stats.totalElitesDefeated += 1;
+      }
+      playerSave.stats.totalEnemiesDefeated += 1;
+      playerSave.dailyProgress._daily_hostiles =
+        (playerSave.dailyProgress._daily_hostiles || 0) + 1;
+      if (playerSave.dailyProgress._daily_hostiles >= 15) {
+        playerSave.dailyProgress.daily_appendage_1 = Math.max(
+          1,
+          playerSave.dailyProgress.daily_appendage_1 || 0,
+        );
+      }
+
+      sim.combo++;
+      sim.comboTimer = 4.5;
+      sim.multiplier = Math.min(8, 1 + Math.floor(sim.combo / 3));
+      if (sim.multiplier > sim.maxMultiplierReached) {
+        sim.maxMultiplierReached = sim.multiplier;
+      }
+      sim.score += (e.type === 'cruiser' ? 350 : 150) * sim.multiplier;
+
+      const siphonMult = sim.upgrades.includes('biolume_siphon_array')
+        ? 1 + 0.35 * getModuleTierMult('biolume_siphon_array')
+        : 1.0;
+      const sovereignYield =
+        sim.activeShipId === 'abyssal_sovereign' ? 1.2 : 1.0;
+      playerSave.salvageCredits += Math.round(
+        (e.type === 'cruiser' ? 45 : 22) * siphonMult * sovereignYield,
+      );
+      if (sim.upgrades.includes('biolume_siphon_array')) {
+        sim.shield = Math.min(sim.maxShield, sim.shield + 4);
+      }
+      if (sim.activeShipId === 'abyssal_talon') {
+        sim.shield = Math.min(sim.maxShield, sim.shield + 6);
+      }
+      persistSave();
+
+      if (isHeavyImpact) {
+        sim.hitstopTimer = 0.04;
+        sim.cameraShake = Math.min(
+          1,
+          sim.cameraShake +
+            0.3 * (playerSave.settings.cameraShakeIntensity / 100),
+        );
+      }
+    }
+
+    function severDefeatedAppendage(app: BossAppendageRuntime) {
+      if (app.destroyed || !bossObj) return;
+      app.destroyed = true;
+      app.hp = 0;
+      bossObj.lastSeveredPartName = app.name;
+      sim.appendagesSeveredThisSortie += 1;
+      sim.bossVulnerableTimer = Math.max(sim.bossVulnerableTimer, 3.0);
+      playerSave.stats.totalAppendagesSevered += 1;
+      playerSave.dailyProgress.daily_appendage_1 =
+        (playerSave.dailyProgress.daily_appendage_1 || 0) + 1;
+
+      sim.lockedTargetIds = sim.lockedTargetIds.filter(
+        (id) => id !== app.numericId,
+      );
+      triggerHitConfirmation(
+        'appendage_sever',
+        `${app.name.toUpperCase()} SEVERED!`,
+      );
+
+      app.group.scale.set(0.32, 0.32, 0.32);
+      app.emissiveMat.color.setHex(0x1f1924);
+      app.emissiveMat.emissive.setHex(0x4c1d3d);
+      app.emissiveMat.emissiveIntensity = 0.45;
+
+      spawnParticleBurst(app.worldPos, 0xf43f5e, 34, 24);
+      spawnParticleBurst(app.worldPos, app.baseColorHex, 28, 20);
+      soundEngine.playAppendageBreak();
+      triggerHaptic([35, 25, 45]);
+
+      if (sim.sonarWeakPointSlot === app.slot) {
+        sim.sonarWeakPointSlot = pickBestBossSonarWeakPoint();
+      }
+
+      sim.hitstopTimer = 0.065;
+      sim.cameraShake = Math.min(
+        1,
+        sim.cameraShake +
+          0.72 * (playerSave.settings.cameraShakeIntensity / 100),
+      );
+      sim.combo += 2;
+      sim.comboTimer = 5.0;
+      sim.multiplier = Math.min(8, 1 + Math.floor(sim.combo / 3));
+      if (sim.multiplier > sim.maxMultiplierReached) {
+        sim.maxMultiplierReached = sim.multiplier;
+      }
+      sim.score += 1200 * sim.multiplier;
+      playerSave.salvageCredits += 180;
+      persistSave();
+      syncHudSnapshot();
+    }
+
+    function resolveDefeatedEntitiesAndAppendages(isHeavyImpact: boolean = false) {
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (e.active && e.hp <= 0) {
+          eliminateDefeatedEnemy(e, i, isHeavyImpact);
+        }
+      }
+      if (bossObj && bossObj.active) {
+        for (const app of bossObj.appendages) {
+          if (!app.destroyed && app.hp <= 0) {
+            severDefeatedAppendage(app);
+          }
+        }
+      }
+    }
+
     function executeShipAbility() {
       if (modeRef.current !== 'playing') return;
       if (sim.activeAbilityCooldown > 0 || sim.activeAbilityTimer > 0) return;
@@ -2058,6 +2483,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
               tgt.app.hitFlashTimer = 0.14;
             }
           });
+          resolveDefeatedEntitiesAndAppendages(true);
           sim.arcLightningTimer = 0.45;
           arcBeamMat.color.setHex(0x818cf8);
           arcBeamMat.opacity = 0.95;
@@ -2120,6 +2546,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             }
           });
           const freeDmg = Math.round(98 * sim.shipSecondaryDmgMult * 1.12);
+          vanguard.group.updateMatrixWorld(true);
           let fired = 0;
           for (let k = 0; k < 6; k++) {
             for (let i = 50; i < 66; i++) {
@@ -2128,13 +2555,19 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                 p.active = true;
                 p.isPlayer = true;
                 p.isTorpedo = true;
+                p.isGuidedEnemyTorpedo = false;
                 const spreadX = (k - 2.5) * 0.7;
-                p.pos.set(
-                  vanguard.group.position.x + spreadX,
-                  vanguard.group.position.y + 0.2,
-                  vanguard.group.position.z - 0.6,
+                _vec3A
+                  .set(spreadX, 0.2, -0.6)
+                  .applyMatrix4(vanguard.group.matrixWorld);
+                p.pos.copy(_vec3A);
+                p.prevPos.copy(_vec3A);
+                p.vel.set(
+                  spreadX * 5,
+                  5 + (k % 2) * 3,
+                  -sim.shipSecondarySpeed * 0.85,
                 );
-                p.vel.set(spreadX * 5, 5 + (k % 2) * 3, -sim.shipSecondarySpeed * 0.85);
+                p.radius = 0.95;
                 p.targetEnemyId =
                   barrageTargets.length > 0
                     ? barrageTargets[k % barrageTargets.length]
@@ -2266,11 +2699,10 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           (overcharged ? overchargeMult : 1),
       );
 
-      // Aim point in world space (-65 units ahead along reticle vector)
-      _vec3C.set(sim.aimX * 26, sim.aimY * 16, -65);
+      // Ensure player ship world matrix is up to date before computing muzzle world coordinates
+      vanguard.group.updateMatrixWorld(true);
 
       const allMuzzles = vanguard.getPrimaryMuzzleOffsets();
-      // Select active muzzles for this volley (all 4 on Maelstrom every 2nd shot or Reaper every 3rd shot, or 2 primary barrels otherwise)
       const useAllMounts =
         allMuzzles.length <= 2 ||
         (sim.activeShipId === 'leviathan_assault' && sim.shotSequenceCount % 2 === 0) ||
@@ -2282,27 +2714,38 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       const perBoltDamage =
         activeMuzzles.length > 2 ? Math.round(boltDamage * 0.68) : boltDamage;
 
+      const shotVectors = computeMuzzleShotVectors(
+        vanguard.group,
+        activeMuzzles,
+        sim.aimPointWorld,
+        boltSpeed,
+        playerSave.equippedPrimaryWeapon,
+        sim.shotSequenceCount,
+      );
+
       let firedAny = false;
       let firedCount = 0;
-      activeMuzzles.forEach((muzzleLocal) => {
+      shotVectors.forEach((shot) => {
         for (let i = 0; i < 50; i++) {
           const p = projectiles[i];
           if (!p.active) {
             p.active = true;
             p.isPlayer = true;
             p.isTorpedo = false;
-            p.pos.set(
-              vanguard.group.position.x + muzzleLocal.x,
-              vanguard.group.position.y + muzzleLocal.y,
-              vanguard.group.position.z + muzzleLocal.z,
-            );
-            _vec3B.subVectors(_vec3C, p.pos).normalize();
-            p.vel.copy(_vec3B).multiplyScalar(boltSpeed);
+            p.isGuidedEnemyTorpedo = false;
+            p.pos.copy(shot.muzzleWorldPos);
+            p.prevPos.copy(shot.muzzleWorldPos);
+            p.vel.copy(shot.velocity);
+            p.radius =
+              playerSave.equippedPrimaryWeapon === 'focused_bio_lance'
+                ? 0.92
+                : 0.78;
             p.damage = perBoltDamage;
-            p.life = 1.6;
+            p.life = 1.85;
             p.targetEnemyId = null;
             p.mesh.position.copy(p.pos);
-            p.mesh.lookAt(_vec3C);
+            _vec3A.copy(p.pos).add(shot.direction);
+            p.mesh.lookAt(_vec3A);
             p.mesh.visible = true;
             firedAny = true;
             firedCount++;
@@ -2316,7 +2759,13 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         sim.activeShipId === 'tempest_corsair' &&
         sim.shotSequenceCount % 4 === 0
       ) {
-        const nearestEnemy = enemies.find((e) => e.active);
+        const nearestEnemy = enemies
+          .filter((e) => e.active)
+          .sort(
+            (a, b) =>
+              a.group.position.distanceToSquared(sim.aimPointWorld) -
+              b.group.position.distanceToSquared(sim.aimPointWorld),
+          )[0];
         if (nearestEnemy) {
           nearestEnemy.hp -= Math.round(boltDamage * 0.9);
           nearestEnemy.hitFlashTimer = 0.12;
@@ -2329,15 +2778,18 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           arcBeamMat.opacity = 0.88;
           sim.arcLightningTimer = 0.22;
           spawnParticleBurst(nearestEnemy.group.position, 0x818cf8, 8, 12);
+          resolveDefeatedEntitiesAndAppendages(false);
         } else if (bossObj && bossObj.active) {
           const app = bossObj.appendages.find((a) => !a.destroyed);
           if (app) {
             app.hp = Math.max(0, app.hp - Math.round(boltDamage * 0.9));
+            bossObj.hp = Math.max(1, bossObj.hp - Math.round(boltDamage * 0.5));
             app.hitFlashTimer = 0.12;
             orientArcBeam(arcBeams[0], vanguard.group.position, app.worldPos);
             arcBeamMat.color.setHex(0x6366f1);
             arcBeamMat.opacity = 0.88;
             sim.arcLightningTimer = 0.22;
+            resolveDefeatedEntitiesAndAppendages(false);
           }
         }
       }
@@ -2349,14 +2801,34 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       }
     }
 
+    function resolveTorpedoTargetPosition(targetId: number): THREE.Vector3 {
+      const enemy = enemies.find((e) => e.active && e.id === targetId);
+      if (enemy) return enemy.group.position;
+      if (bossObj && bossObj.active) {
+        const app = bossObj.appendages.find(
+          (a) => !a.destroyed && a.numericId === targetId,
+        );
+        if (app) return app.worldPos;
+        if (bossObj.id === targetId) return bossObj.group.position;
+      }
+      return sim.aimPointWorld;
+    }
+
     function launchTorpedoSalvo() {
       if (sim.torpedoCooldown > 0) return;
 
-      // If no targets are pre-locked, automatically lock up to maxLocks active targets (prioritizing intact boss appendages!)
+      // If no targets are pre-locked, automatically lock up to maxLocks active targets closest to aimPointWorld
       if (sim.lockedTargetIds.length === 0) {
         if (bossObj && bossObj.active) {
-          for (const app of bossObj.appendages) {
-            if (!app.destroyed && sim.lockedTargetIds.length < sim.maxLocks) {
+          const intactApps = bossObj.appendages
+            .filter((app) => !app.destroyed)
+            .sort(
+              (a, b) =>
+                a.worldPos.distanceToSquared(sim.aimPointWorld) -
+                b.worldPos.distanceToSquared(sim.aimPointWorld),
+            );
+          for (const app of intactApps) {
+            if (sim.lockedTargetIds.length < sim.maxLocks) {
               sim.lockedTargetIds.push(app.numericId);
             }
           }
@@ -2365,8 +2837,15 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             bossObj.locked = true;
           }
         }
-        for (const e of enemies) {
-          if (e.active && sim.lockedTargetIds.length < sim.maxLocks) {
+        const sortedEnemies = enemies
+          .filter((e) => e.active)
+          .sort(
+            (a, b) =>
+              a.group.position.distanceToSquared(sim.aimPointWorld) -
+              b.group.position.distanceToSquared(sim.aimPointWorld),
+          );
+        for (const e of sortedEnemies) {
+          if (sim.lockedTargetIds.length < sim.maxLocks) {
             sim.lockedTargetIds.push(e.id);
             e.locked = true;
           }
@@ -2375,6 +2854,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
       if (sim.lockedTargetIds.length === 0) return;
 
+      vanguard.group.updateMatrixWorld(true);
       let launched = 0;
       const baseTorpDmg = sim.upgrades.includes('quad_torpedo_salvo') ? 105 : 88;
       const sovereignPassive = sim.activeShipId === 'abyssal_sovereign' ? 1.12 : 1.0;
@@ -2392,22 +2872,33 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             p.active = true;
             p.isPlayer = true;
             p.isTorpedo = true;
+            p.isGuidedEnemyTorpedo = false;
             const muzzle = secMuzzles[idx % secMuzzles.length];
             const sideSign = muzzle ? Math.sign(muzzle.x) || 1 : idx % 2 === 0 ? -1 : 1;
-            p.pos.set(
-              vanguard.group.position.x + (muzzle ? muzzle.x : sideSign * 1.2),
-              vanguard.group.position.y + (muzzle ? muzzle.y : -0.35),
-              vanguard.group.position.z + (muzzle ? muzzle.z : -0.8),
-            );
-            p.vel.set(
-              sideSign * 6.5,
-              3.5 + (idx % 3) * 2,
-              -sim.shipSecondarySpeed * 0.74,
-            );
+            _vec3A
+              .set(
+                muzzle ? muzzle.x : sideSign * 1.2,
+                muzzle ? muzzle.y : -0.35,
+                muzzle ? muzzle.z : -0.8,
+              )
+              .applyMatrix4(vanguard.group.matrixWorld);
+            p.pos.copy(_vec3A);
+            p.prevPos.copy(_vec3A);
+
+            // Initial launch vector toward each torpedo's locked target world position
+            const targetWorldPos = resolveTorpedoTargetPosition(targetId);
+            _vec3B.subVectors(targetWorldPos, p.pos).normalize();
+            _vec3B.x += sideSign * 0.05;
+            _vec3B.y += (idx % 3) * 0.02;
+            _vec3B.normalize().multiplyScalar(sim.shipSecondarySpeed * 0.88);
+            p.vel.copy(_vec3B);
+            p.radius = 0.95;
             p.targetEnemyId = targetId;
             p.damage = torpDamage;
-            p.life = 3.2;
+            p.life = 3.4;
             p.mesh.position.copy(p.pos);
+            _vec3C.copy(p.pos).add(p.vel);
+            p.mesh.lookAt(_vec3C);
             p.mesh.visible = true;
             launched++;
             break;
@@ -2431,11 +2922,6 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         sim.torpedoCooldown = sim.shipSecondaryCooldown * salvoReloadFactor;
         soundEngine.playTorpedoLaunch(launched);
         triggerHaptic([16, 20, 26]);
-        sim.lockedTargetIds = [];
-        enemies.forEach((e) => {
-          e.locked = false;
-        });
-        if (bossObj) bossObj.locked = false;
       }
     }
 
@@ -2443,6 +2929,12 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       origin: THREE.Vector3,
       aimAtPlayer: boolean = true,
       customVel?: THREE.Vector3,
+      options?: {
+        damage?: number;
+        radius?: number;
+        scale?: number;
+        isGuided?: boolean;
+      },
     ) {
       for (let i = 66; i < PROJECTILE_POOL_SIZE; i++) {
         const p = projectiles[i];
@@ -2450,7 +2942,9 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           p.active = true;
           p.isPlayer = false;
           p.isTorpedo = false;
+          p.isGuidedEnemyTorpedo = Boolean(options?.isGuided);
           p.pos.copy(origin);
+          p.prevPos.copy(origin);
           if (customVel) {
             p.vel.copy(customVel);
           } else if (aimAtPlayer) {
@@ -2462,8 +2956,10 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           } else {
             p.vel.set(0, 0, 44);
           }
-          p.damage = 16;
-          p.life = 3.6;
+          p.radius = options?.radius ?? 0.48;
+          p.damage = options?.damage ?? 16;
+          p.life = 3.8;
+          p.mesh.scale.setScalar(options?.scale ?? 1.0);
           p.mesh.position.copy(p.pos);
           p.mesh.visible = true;
           break;
@@ -2552,8 +3048,20 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       if (activeMission.objectiveType === 'hunt_elites') {
         objCurrent = sim.elitesDefeated;
       } else if (activeMission.objectiveType === 'boss_finale') {
-        objCurrent = bossObj ? 0 : sim.stageProgress >= 0.99 ? 1 : 0;
+        objCurrent = sim.bossDefeated ? 1 : 0;
       }
+
+      const aliveCount = enemies.filter((e) => e.active).length;
+      const totalWaves = Math.max(1, activeMission.waves.length);
+      const currentWaveIdx = Math.min(totalWaves, Math.max(1, sim.waveCursor));
+      const remainingObjectiveKills = Math.max(
+        0,
+        activeMission.targetKillsRequired - objCurrent,
+      );
+      const remainingHostiles = Math.max(
+        aliveCount + sim.pendingSpawns.length,
+        remainingObjectiveKills,
+      );
 
       let flightSchoolStep: string | null = null;
       if (activeMission.objectiveType === 'flight_school') {
@@ -2680,6 +3188,17 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         lastSeveredPartName: bossObj ? bossObj.lastSeveredPartName : null,
         hazardWarningText: sim.hazardWarningText,
         enemiesDefeated: sim.enemiesDefeated,
+        aliveEnemiesCount: aliveCount,
+        remainingMissionEnemies: remainingHostiles,
+        currentWaveIndex: currentWaveIdx,
+        totalWavesCount: totalWaves,
+        missionPhase: sim.missionPhase,
+        missionTotalPhases: 6,
+        missionPhaseLabel: sim.missionPhaseLabel,
+        reticleState: sim.reticleState,
+        activeAimTargetLabel: sim.activeAimTargetLabel,
+        hitConfirmType: sim.hitConfirmTimer > 0 ? sim.hitConfirmType : 'none',
+        hitConfirmLabel: sim.hitConfirmTimer > 0 ? sim.hitConfirmLabel : null,
         shotsFired: sim.shotsFired,
         shotsHit: sim.shotsHit,
         stageElapsedSeconds: Math.round(sim.stageElapsed),
@@ -2729,9 +3248,10 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         disposeGroupGeometries(e.group);
       });
       enemies.length = 0;
+      sim.pendingSpawns = [];
       sim.waveCursor = activeMission.waves.length;
       sim.stageElapsed = activeMission.durationSeconds;
-      sim.stageProgress = 0.9;
+      sim.stageProgress = 0.88;
       spawnStageBoss(sim.stageId);
     }
 
@@ -2810,6 +3330,14 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       startStage,
       startMission,
       setMode: (nextMode: GameStateMode) => {
+        if (nextMode !== 'playing') {
+          touchMoveX = 0;
+          touchMoveY = 0;
+          touchFiring = false;
+          pointerFiring = false;
+          isTouchAimDragging = false;
+          touchAimPointerId = null;
+        }
         if (nextMode === 'title') {
           recomputeLoadoutStats();
         }
@@ -2835,6 +3363,9 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       setTouchInput: (x: number, y: number) => {
         touchMoveX = x;
         touchMoveY = y;
+        if (Math.hypot(x, y) > 0.05) {
+          isMouseAimActive = false;
+        }
       },
       setTouchFiring: (firing: boolean) => {
         touchFiring = firing;
@@ -2850,6 +3381,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     // 12. Mobile-First Touch & Pointer Input Handling (Orbit, Pinch-Zoom, Touch-Drag Aim & Tap-Lock)
     const heldKeys = new Set<string>();
     let pointerFiring = false;
+    let isMouseAimActive = false;
     let isDraggingHangarShip = false;
     let isTouchAimDragging = false;
     let touchAimPointerId: number | null = null;
@@ -2923,6 +3455,14 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
       heldKeys.add(e.code);
+
+      if (e.code === 'F3') {
+        e.preventDefault();
+        updateSettings({
+          aimDebugEnabled: !playerSave.settings.aimDebugEnabled,
+        });
+        return;
+      }
 
       if (e.code === 'Escape') {
         e.preventDefault();
@@ -3059,6 +3599,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
       // In-flight mobile touch-drag aiming on the open 3D screen
       if (isTouchAimDragging && touchAimPointerId === e.pointerId) {
+        isMouseAimActive = false;
         const rect = renderer.domElement.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return;
         const dx = e.clientX - dragLastClientX;
@@ -3076,9 +3617,10 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           -0.88,
           0.88,
         );
-      } else if (e.pointerType === 'mouse' && !playerSave.settings.touchControlsEnabled) {
+      } else if (e.pointerType === 'mouse') {
         const rect = renderer.domElement.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return;
+        isMouseAimActive = true;
         const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         const ny = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
         sim.aimX = THREE.MathUtils.clamp(nx, -0.95, 0.95);
@@ -3149,9 +3691,16 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        handleWindowBlur();
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleWindowBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     const domCanvas = renderer.domElement;
     domCanvas.addEventListener('pointermove', handlePointerMove);
     domCanvas.addEventListener('pointerdown', handlePointerDown);
@@ -3380,6 +3929,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         // Seamless 3D Abyssal Command Berth & Camera Choreography around the live hero craft
         hangarBerthGroup.visible = true;
         vanguard.group.visible = true;
+        aimDebugGroup.visible = false;
 
         const titleDepthWave = (Math.sin(elapsed * 0.35) + 1) * 0.5;
         updateDepthAtmosphere(selectedStageRef.current, titleDepthWave, 0, dt);
@@ -3612,48 +4162,171 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         vanguard.group.scale.setScalar(1);
         // --- ACTIVE 60FPS DOGFIGHTING SIMULATION ---
         const activeMission = getActiveMission();
-        const missionDuration = Math.max(30, activeMission.durationSeconds);
+        const missionDuration = Math.max(60, activeMission.durationSeconds);
         const missionWaves = activeMission.waves;
         const telegraphSpeedMult =
           DIFFICULTY_CONFIGS[playerSave.selectedDifficulty].telegraphSpeedMult;
         sim.stageElapsed += dt;
+        sim.waveScheduleElapsed += dt;
 
+        if (sim.hitConfirmTimer > 0) {
+          sim.hitConfirmTimer = Math.max(0, sim.hitConfirmTimer - dt);
+          if (sim.hitConfirmTimer <= 0) {
+            sim.hitConfirmType = 'none';
+            sim.hitConfirmLabel = null;
+          }
+        }
+        if (sim.targetLostTimer > 0) {
+          sim.targetLostTimer = Math.max(0, sim.targetLostTimer - dt);
+        }
+
+        // Flush any queued wave entities up to the mobile active-hostile cap
+        flushPendingSpawns();
+
+        // Advance 6-phase wave scheduler on virtual schedule timer OR wave clear (NEVER mutating real sim.stageElapsed!)
         if (!bossObj) {
-          sim.stageProgress = Math.min(
-            0.85,
-            sim.stageElapsed / missionDuration,
-          );
+          const scheduleRatio = sim.waveScheduleElapsed / missionDuration;
           while (
             sim.waveCursor < missionWaves.length &&
-            sim.stageProgress >= missionWaves[sim.waveCursor].progressTrigger
+            scheduleRatio >= missionWaves[sim.waveCursor].progressTrigger
           ) {
             const w = missionWaves[sim.waveCursor];
-            spawnWave(w.enemyType, w.count, w.formation, w.spread);
+            spawnWave(w);
             sim.waveCursor++;
+            sim.waveClearAdvanceTimer = 0;
           }
 
-          // Check non-boss mission completion or spawn boss for finale/stage run
-          if (!activeMission.hasBossFinale) {
-            const targetReached =
-              activeMission.objectiveType === 'hunt_elites'
-                ? sim.elitesDefeated >= activeMission.targetKillsRequired
-                : sim.enemiesDefeated >= activeMission.targetKillsRequired;
-            if (
-              targetReached ||
-              (sim.stageProgress >= 0.85 && enemies.length === 0)
-            ) {
-              sim.stageProgress = 1;
-              finalizeSortie(true);
-              soundEngine.playStageClearFanfare();
-              syncHudSnapshot('stage_clear');
+          // Wave-clear reinforcement advance: if active wave is wiped out early, advance virtual schedule clock after a 2.0s breather
+          const activeHostileCount = enemies.filter((e) => e.active).length;
+          if (
+            sim.waveCursor > 0 &&
+            sim.waveCursor < missionWaves.length &&
+            activeHostileCount === 0 &&
+            sim.pendingSpawns.length === 0
+          ) {
+            sim.waveClearAdvanceTimer += dt;
+            if (sim.waveClearAdvanceTimer >= 2.0) {
+              sim.waveClearAdvanceTimer = 0;
+              const nextWave = missionWaves[sim.waveCursor];
+              sim.waveScheduleElapsed = Math.max(
+                sim.waveScheduleElapsed,
+                nextWave.progressTrigger * missionDuration,
+              );
+              spawnWave(nextWave);
+              sim.waveCursor++;
             }
-          } else if (sim.stageProgress >= 0.85 && enemies.length === 0) {
-            sim.stageProgress = 0.9;
-            spawnStageBoss(sim.stageId);
+          } else if (sim.waveCursor < missionWaves.length) {
+            sim.waveClearAdvanceTimer = 0;
           }
-        } else if (bossObj.active) {
-          sim.stageProgress =
-            0.88 + 0.12 * (1 - bossObj.hp / Math.max(1, bossObj.maxHp));
+        }
+
+        // Authoritative 6-phase mission state & completion evaluator
+        const aliveCombatCount = enemies.filter(
+          (e) => e.active && e.type !== 'hazard_mine',
+        ).length;
+        const aliveMineCount = enemies.filter(
+          (e) => e.active && e.type === 'hazard_mine',
+        ).length;
+        const missionEval = evaluateMissionStateAndCompletion({
+          mission: activeMission,
+          hull: sim.hull,
+          stageElapsed: sim.stageElapsed,
+          waveCursor: sim.waveCursor,
+          totalWaves: missionWaves.length,
+          pendingSpawnsCount: sim.pendingSpawns.length,
+          aliveCombatEnemiesCount: aliveCombatCount,
+          aliveMinesCount: aliveMineCount,
+          enemiesDefeated: sim.enemiesDefeated,
+          elitesDefeated: sim.elitesDefeated,
+          beaconIntegrityPct: sim.beaconIntegrityPct ?? 100,
+          bossSpawned: sim.bossSpawned,
+          bossActive: Boolean(bossObj && bossObj.active),
+          bossDefeated: sim.bossDefeated,
+          shotsFired: sim.shotsFired,
+          sonarPulsesUsed: sim.sonarPulsesUsedThisSortie,
+          rollsExecuted: sim.rollsExecutedThisSortie,
+        });
+
+        // Dynamic reinforcement wave spawner when all scheduled waves are exhausted but real-time duration or kill/elite targets are not yet met
+        if (
+          !bossObj &&
+          missionEval.needsReinforcementWave &&
+          aliveCombatCount === 0 &&
+          sim.pendingSpawns.length === 0
+        ) {
+          sim.waveClearAdvanceTimer += dt;
+          if (sim.waveClearAdvanceTimer >= 2.0) {
+            sim.waveClearAdvanceTimer = 0;
+            sim.reinforcementWavesSpawned += 1;
+            const rIdx = sim.reinforcementWavesSpawned;
+            const isEliteMission = activeMission.objectiveType === 'hunt_elites';
+            const primaryType: EnemyType = isEliteMission
+              ? rIdx % 2 === 0
+                ? 'cruiser'
+                : 'manta'
+              : sim.stageId === 1
+                ? rIdx % 3 === 0
+                  ? 'manta'
+                  : rIdx % 2 === 0
+                    ? 'jelly'
+                    : 'skimmer'
+                : sim.stageId === 2
+                  ? rIdx % 3 === 0
+                    ? 'cruiser'
+                    : rIdx % 2 === 0
+                      ? 'manta'
+                      : 'skimmer'
+                  : rIdx % 2 === 0
+                    ? 'cruiser'
+                    : 'manta';
+            const escortType: EnemyType =
+              primaryType === 'cruiser'
+                ? 'skimmer'
+                : primaryType === 'manta'
+                  ? 'jelly'
+                  : 'manta';
+            spawnWave({
+              progressTrigger: 0.85,
+              enemyType: primaryType,
+              count: primaryType === 'cruiser' ? 2 : 4,
+              formation:
+                rIdx % 3 === 0
+                  ? 'spiral_ring'
+                  : rIdx % 2 === 0
+                    ? 'flank_pair'
+                    : 'v_wedge',
+              spread: 18,
+              isElite: isEliteMission || primaryType === 'cruiser' || rIdx % 2 === 0,
+              escortType,
+              escortCount: 2,
+            });
+          }
+        }
+
+        const waveRatio =
+          missionWaves.length > 0
+            ? sim.waveCursor / missionWaves.length
+            : 0;
+        const timeRatio = Math.min(0.85, sim.stageElapsed / missionDuration);
+        sim.stageProgress = sim.bossDefeated
+          ? 1.0
+          : bossObj && bossObj.active
+            ? 0.88 + (1 - bossObj.hp / Math.max(1, bossObj.maxHp)) * 0.11
+            : Math.min(0.86, Math.max(waveRatio * 0.65, timeRatio));
+        sim.missionPhase = missionEval.phaseNumber;
+        sim.missionPhaseLabel = missionEval.phaseTitle;
+
+        if (missionEval.shouldSpawnBossNow && !sim.bossSpawned && !bossObj) {
+          spawnStageBoss(sim.stageId);
+        } else if (missionEval.shouldCompleteVictory && !sim.sortieCompleted) {
+          sim.stageProgress = 1;
+          finalizeSortie(true);
+          soundEngine.playStageClearFanfare();
+          syncHudSnapshot(
+            activeMission.hasBossFinale && sim.stageId === 3
+              ? 'victory'
+              : 'stage_clear',
+          );
         }
 
         // Dynamically shift ambient abyss color, fog density, and lighting intensity with player depth
@@ -3669,7 +4342,9 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           dt,
         );
 
-        // Input steering (Keyboard + Mouse + Touch Virtual Stick)
+        // =====================================================================
+        // STEP 1: UPDATE PLAYER SHIP STEERING, POSITION, ROTATION & WORLD MATRIX
+        // =====================================================================
         let moveX = touchMoveX;
         let moveY = touchMoveY;
         if (heldKeys.has('KeyA') || heldKeys.has('ArrowLeft')) moveX -= 1;
@@ -3678,62 +4353,6 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         if (heldKeys.has('KeyS') || heldKeys.has('ArrowDown')) moveY -= 1;
         moveX = THREE.MathUtils.clamp(moveX, -1, 1);
         moveY = THREE.MathUtils.clamp(moveY, -1, 1);
-
-        if (!isTouchAimDragging) {
-          if (playerSave.settings.aimAssist) {
-            // Mobile smart target tracking: gently guide reticle toward nearest active target in front
-            let nearestWorldPos: THREE.Vector3 | null = null;
-            let bestZ = -999;
-            if (bossObj && bossObj.active) {
-              const weakApp = sim.sonarWeakPointSlot && sim.sonarWeakPointSlot !== 'core'
-                ? bossObj.appendages.find((a) => a.slot === sim.sonarWeakPointSlot && !a.destroyed)
-                : bossObj.appendages.find((a) => !a.destroyed);
-              nearestWorldPos = weakApp ? weakApp.worldPos : bossObj.group.position;
-            } else {
-              for (const e of enemies) {
-                if (e.active && e.group.position.z < -8 && e.group.position.z > bestZ) {
-                  bestZ = e.group.position.z;
-                  nearestWorldPos = e.group.position;
-                }
-              }
-            }
-            if (nearestWorldPos) {
-              _vec3A.copy(nearestWorldPos).project(camera);
-              if (_vec3A.z <= 1) {
-                const targetAimX = THREE.MathUtils.clamp(_vec3A.x, -0.82, 0.82);
-                const targetAimY = THREE.MathUtils.clamp(_vec3A.y, -0.75, 0.75);
-                sim.aimX = THREE.MathUtils.damp(sim.aimX, targetAimX, 3.8, dt);
-                sim.aimY = THREE.MathUtils.damp(sim.aimY, targetAimY, 3.8, dt);
-              }
-            } else {
-              sim.aimX = THREE.MathUtils.damp(
-                sim.aimX,
-                THREE.MathUtils.clamp(sim.playerX / 15 + moveX * 0.42, -0.85, 0.85),
-                7,
-                dt,
-              );
-              sim.aimY = THREE.MathUtils.damp(
-                sim.aimY,
-                THREE.MathUtils.clamp(sim.playerY / 9 + moveY * 0.42, -0.78, 0.78),
-                7,
-                dt,
-              );
-            }
-          } else {
-            sim.aimX = THREE.MathUtils.damp(
-              sim.aimX,
-              THREE.MathUtils.clamp(sim.playerX / 15 + moveX * 0.45, -0.9, 0.9),
-              8,
-              dt,
-            );
-            sim.aimY = THREE.MathUtils.damp(
-              sim.aimY,
-              THREE.MathUtils.clamp(sim.playerY / 9 + moveY * 0.45, -0.85, 0.85),
-              8,
-              dt,
-            );
-          }
-        }
 
         const baseSpeed = sim.upgrades.includes('hydro_thruster_coil')
           ? 27
@@ -3789,6 +4408,62 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           );
         }
 
+        // Update reticle steering & local target magnetism BEFORE camera lookAt (and never override active mouse cursor)
+        if (!isTouchAimDragging && !isMouseAimActive) {
+          const hasJoystickSteering =
+            playerSave.settings.touchControlsEnabled ||
+            Math.hypot(moveX, moveY) > 0.05;
+          if (hasJoystickSteering) {
+            sim.aimX = THREE.MathUtils.damp(
+              sim.aimX,
+              THREE.MathUtils.clamp(sim.playerX / 15 + moveX * 0.45, -0.9, 0.9),
+              8,
+              dt,
+            );
+            sim.aimY = THREE.MathUtils.damp(
+              sim.aimY,
+              THREE.MathUtils.clamp(sim.playerY / 9 + moveY * 0.45, -0.85, 0.85),
+              8,
+              dt,
+            );
+          }
+
+          if (playerSave.settings.aimAssist) {
+            let bestTargetNdcX: number | null = null;
+            let bestTargetNdcY: number | null = null;
+            let bestNdcDist = 0.18; // Local magnetism cone only around current reticle
+
+            const considerWorldTarget = (worldPos: THREE.Vector3) => {
+              _vec3A.copy(worldPos).project(camera);
+              if (_vec3A.z <= 1) {
+                const dist = Math.hypot(_vec3A.x - sim.aimX, _vec3A.y - sim.aimY);
+                if (dist < bestNdcDist) {
+                  bestNdcDist = dist;
+                  bestTargetNdcX = THREE.MathUtils.clamp(_vec3A.x, -0.92, 0.92);
+                  bestTargetNdcY = THREE.MathUtils.clamp(_vec3A.y, -0.85, 0.85);
+                }
+              }
+            };
+
+            if (bossObj && bossObj.active) {
+              for (const app of bossObj.appendages) {
+                if (!app.destroyed) considerWorldTarget(app.worldPos);
+              }
+              considerWorldTarget(bossObj.group.position);
+            }
+            for (const e of enemies) {
+              if (e.active && e.group.position.z < -8) {
+                considerWorldTarget(e.group.position);
+              }
+            }
+
+            if (bestTargetNdcX !== null && bestTargetNdcY !== null) {
+              sim.aimX = THREE.MathUtils.damp(sim.aimX, bestTargetNdcX, 4.2, dt);
+              sim.aimY = THREE.MathUtils.damp(sim.aimY, bestTargetNdcY, 4.2, dt);
+            }
+          }
+        }
+
         const targetPitch =
           (sim.playerVelY * 0.024 + sim.aimY * 0.18) * sim.shipTurnRateMult;
         const targetYaw = -sim.playerVelX * 0.015 - sim.aimX * 0.22;
@@ -3806,9 +4481,80 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           sim.yawAngle,
           sim.rollAngle,
         );
+        vanguard.group.updateMatrixWorld(true);
         shipPointLight.position.set(sim.playerX, sim.playerY, -4.5);
 
-        // Regenerate Boost & Piezo-Shield
+        // =====================================================================
+        // STEP 2: UPDATE CAMERA TRANSFORM & PROJECTION MATRIX BEFORE AIMING
+        // =====================================================================
+        if (sim.cameraShake > 0) {
+          sim.cameraShake = Math.max(0, sim.cameraShake - dt * 2.8);
+        }
+        const shakeOffsetX =
+          (Math.random() - 0.5) * sim.cameraShake * 0.85;
+        const shakeOffsetY =
+          (Math.random() - 0.5) * sim.cameraShake * 0.85;
+
+        if (cameraModeRef.current === 'cockpit') {
+          vanguard.group.visible = false;
+          camera.position.set(
+            sim.playerX + shakeOffsetX * 0.4,
+            sim.playerY + 0.55 + shakeOffsetY * 0.4,
+            -1.1,
+          );
+          camera.lookAt(
+            sim.playerX + sim.aimX * 16,
+            sim.playerY + sim.aimY * 11,
+            -45,
+          );
+          camera.fov = THREE.MathUtils.damp(
+            camera.fov,
+            sim.barrelRollTimer > 0 ? 74 : 68,
+            8,
+            dt,
+          );
+          camera.updateProjectionMatrix();
+          camera.updateMatrixWorld(true);
+        } else {
+          vanguard.group.visible = true;
+          const desiredCamX = sim.playerX * 0.62 + shakeOffsetX;
+          const desiredCamY = sim.playerY * 0.56 + 3.1 + shakeOffsetY;
+          const desiredCamZ = sim.barrelRollTimer > 0 ? 11.8 : 13.4;
+
+          camera.position.x = THREE.MathUtils.damp(
+            camera.position.x,
+            desiredCamX,
+            8,
+            dt,
+          );
+          camera.position.y = THREE.MathUtils.damp(
+            camera.position.y,
+            desiredCamY,
+            8,
+            dt,
+          );
+          camera.position.z = THREE.MathUtils.damp(
+            camera.position.z,
+            desiredCamZ,
+            8,
+            dt,
+          );
+          camera.lookAt(
+            sim.playerX * 0.78 + sim.aimX * 4.5,
+            sim.playerY * 0.75 + sim.aimY * 3.0 + 0.6,
+            -30,
+          );
+          camera.fov = THREE.MathUtils.damp(
+            camera.fov,
+            sim.barrelRollTimer > 0 ? 69 : 62,
+            8,
+            dt,
+          );
+          camera.updateProjectionMatrix();
+          camera.updateMatrixWorld(true);
+        }
+
+        // Regenerate Boost, Piezo-Shield & Cooldowns
         const boostRegen = sim.upgrades.includes('hydro_thruster_coil')
           ? 24
           : 17;
@@ -3873,6 +4619,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
               }
             }
           });
+          resolveDefeatedEntitiesAndAppendages(false);
           projectiles.forEach((p) => {
             if (
               p.active &&
@@ -3889,6 +4636,662 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           vortexGroup.visible = false;
         }
 
+        // =====================================================================
+        // STEP 3: UPDATE ENEMY AI ROLES, TELEGRAPHS, ATTACK PATTERNS & REPOSITION
+        // =====================================================================
+        let anyEnemyTelegraphing = false;
+        let scannedHazardCounter = 0;
+        for (let i = enemies.length - 1; i >= 0; i--) {
+          const e = enemies[i];
+          if (!e.active) continue;
+
+          if (
+            sim.sonarActiveTimer > 0 &&
+            (e.type === 'hazard_mine' || e.isFiringWindup)
+          ) {
+            scannedHazardCounter++;
+          }
+
+          const age = sim.stageElapsed - e.spawnTime;
+          const distZ = e.group.position.z;
+
+          // Update Enemy AI FSM State
+          if (e.evadeTimer > 0) {
+            e.evadeTimer = Math.max(0, e.evadeTimer - dt);
+            e.aiState = 'evade';
+          } else if (e.isFiringWindup) {
+            e.aiState = e.telegraphTimer > 0.25 ? 'telegraph' : 'attack';
+          } else if (distZ > -22) {
+            e.aiState = 'reposition';
+          } else if (distZ < -85) {
+            e.aiState = 'patrol';
+          } else if (e.type === 'manta' || e.type === 'skimmer') {
+            e.aiState = distZ > -52 ? 'flank' : 'pursue';
+          } else {
+            e.aiState = 'approach';
+          }
+
+          // Role-distinct enemy movement & evasive weaving
+          const zSpeedMult =
+            e.aiState === 'evade'
+              ? 0.7
+              : e.type === 'cruiser' && distZ > -54 && distZ < -26
+                ? 0.52 // Heavy cruisers hold firing distance longer
+                : 1.0;
+          e.group.position.z += e.velZ * zSpeedMult * dt;
+
+          if (e.type === 'skimmer') {
+            const pursueX = THREE.MathUtils.lerp(
+              e.baseX,
+              sim.playerX + e.flankSign * 4.2,
+              0.35,
+            );
+            const evadeOffset =
+              e.evadeTimer > 0 ? e.flankSign * 5.2 * Math.sin(age * 8) : 0;
+            e.group.position.x = THREE.MathUtils.clamp(
+              pursueX +
+                Math.sin(age * 2.7 + e.patternPhase) * 4.4 +
+                evadeOffset,
+              -15.5,
+              15.5,
+            );
+            e.group.position.y = THREE.MathUtils.clamp(
+              e.baseY + Math.cos(age * 2.2 + e.patternPhase) * 2.7,
+              -8.5,
+              8.5,
+            );
+            e.group.rotation.z = Math.cos(age * 2.7 + e.patternPhase) * 0.38;
+          } else if (e.type === 'jelly') {
+            e.group.position.x = THREE.MathUtils.clamp(
+              e.baseX + Math.sin(age * 1.6 + e.patternPhase) * 2.6,
+              -15.0,
+              15.0,
+            );
+            e.group.position.y = THREE.MathUtils.clamp(
+              e.baseY + Math.sin(age * 3.1 + e.patternPhase) * 3.2,
+              -8.5,
+              8.5,
+            );
+            e.group.rotation.y += dt * 1.5;
+          } else if (e.type === 'manta') {
+            const sweepAmp = e.aiState === 'flank' ? 7.8 : 6.2;
+            e.group.position.x = THREE.MathUtils.clamp(
+              e.baseX + Math.cos(age * 3.2 + e.patternPhase) * sweepAmp,
+              -15.8,
+              15.8,
+            );
+            e.group.position.y = THREE.MathUtils.clamp(
+              THREE.MathUtils.lerp(e.baseY, sim.playerY, 0.25) +
+                Math.sin(age * 2.4 + e.patternPhase) * 2.2,
+              -8.5,
+              8.5,
+            );
+            e.group.rotation.z = -Math.sin(age * 3.2 + e.patternPhase) * 0.5;
+          } else if (e.type === 'cruiser') {
+            e.group.position.x = THREE.MathUtils.clamp(
+              e.baseX + Math.sin(age * 1.1 + e.patternPhase) * 3.2,
+              -13.5,
+              13.5,
+            );
+            e.group.position.y = THREE.MathUtils.clamp(
+              e.baseY + Math.cos(age * 0.9 + e.patternPhase) * 1.5,
+              -7.2,
+              7.2,
+            );
+          } else if (e.type === 'hazard_mine') {
+            // Proximity drift when player approaches within 22m
+            if (e.group.position.distanceTo(vanguard.group.position) < 22) {
+              e.group.position.x = THREE.MathUtils.damp(
+                e.group.position.x,
+                sim.playerX,
+                1.2,
+                dt,
+              );
+              e.group.position.y = THREE.MathUtils.damp(
+                e.group.position.y,
+                sim.playerY,
+                1.2,
+                dt,
+              );
+            }
+            e.group.rotation.x += dt * 1.2;
+            e.group.rotation.y += dt * 1.6;
+          }
+
+          e.group.updateMatrixWorld();
+
+          // Hit flash recovery
+          if (e.hitFlashTimer > 0) {
+            e.hitFlashTimer -= dt;
+            if (e.hitFlashTimer <= 0) {
+              (e.coreMesh.material as THREE.MeshStandardMaterial).color.setHex(
+                e.baseColorHex,
+              );
+            }
+          }
+
+          // Enemy Windup Telegraph -> Role-Specific Strike FSM
+          if (e.type !== 'hazard_mine' && e.group.position.z < -12) {
+            e.fireTimer -= dt * telegraphSpeedMult;
+            if (e.fireTimer <= 1.0 && !e.isFiringWindup) {
+              e.isFiringWindup = true;
+              e.telegraphTimer = 1.0;
+            }
+            if (e.isFiringWindup) {
+              anyEnemyTelegraphing = true;
+              e.telegraphTimer -= dt * telegraphSpeedMult;
+              const ringMat = e.telegraphRing
+                .material as THREE.MeshBasicMaterial;
+              ringMat.opacity = 0.85;
+              const s = 0.5 + Math.max(0, e.telegraphTimer) * 1.1;
+              e.telegraphRing.scale.set(s, s, 1);
+              e.telegraphRing.lookAt(camera.position);
+
+              if (e.telegraphTimer <= 0) {
+                e.isFiringWindup = false;
+                ringMat.opacity = 0;
+
+                if (e.type === 'skimmer') {
+                  // Fast twin-bolt burst
+                  e.fireTimer = 3.1;
+                  [-0.45, 0.45].forEach((offsetX) => {
+                    _vec3A.copy(e.group.position);
+                    _vec3A.x += offsetX;
+                    _vec3B
+                      .subVectors(vanguard.group.position, _vec3A)
+                      .normalize()
+                      .multiplyScalar(45);
+                    fireEnemyPlasma(_vec3A, false, _vec3B, {
+                      damage: 12,
+                      radius: 0.42,
+                      scale: 0.88,
+                    });
+                  });
+                } else if (e.type === 'manta') {
+                  // 3-way spread volley
+                  e.fireTimer = 3.2;
+                  [-0.18, 0, 0.18].forEach((spreadX) => {
+                    _vec3B
+                      .subVectors(vanguard.group.position, e.group.position)
+                      .normalize();
+                    _vec3B.x += spreadX;
+                    _vec3B.normalize().multiplyScalar(43);
+                    fireEnemyPlasma(e.group.position, false, _vec3B, {
+                      damage: 14,
+                      radius: 0.46,
+                      scale: 0.96,
+                    });
+                  });
+                } else if (e.type === 'jelly') {
+                  // Charged bio-shockwave orb
+                  e.fireTimer = 3.6;
+                  _vec3B
+                    .subVectors(vanguard.group.position, e.group.position)
+                    .normalize()
+                    .multiplyScalar(34);
+                  fireEnemyPlasma(e.group.position, false, _vec3B, {
+                    damage: 20,
+                    radius: 0.72,
+                    scale: 1.45,
+                  });
+                } else if (e.type === 'cruiser') {
+                  // Heavy dual plasma cannons + guided bio-torpedo
+                  e.fireTimer = 2.6;
+                  [-1.2, 1.2].forEach((turretX) => {
+                    _vec3A.copy(e.group.position);
+                    _vec3A.x += turretX;
+                    _vec3B
+                      .subVectors(vanguard.group.position, _vec3A)
+                      .normalize()
+                      .multiplyScalar(44);
+                    fireEnemyPlasma(_vec3A, false, _vec3B, {
+                      damage: 16,
+                      radius: 0.5,
+                      scale: 1.1,
+                    });
+                  });
+                  _vec3B
+                    .subVectors(vanguard.group.position, e.group.position)
+                    .normalize()
+                    .multiplyScalar(32);
+                  fireEnemyPlasma(e.group.position, false, _vec3B, {
+                    damage: 22,
+                    radius: 0.65,
+                    scale: 1.35,
+                    isGuided: true,
+                  });
+                }
+              }
+            }
+          }
+
+          // Check collision with player ship
+          if (
+            e.group.position.distanceTo(vanguard.group.position) <
+            e.radius + 1.8
+          ) {
+            damagePlayer(e.type === 'hazard_mine' ? 28 : 22);
+            spawnParticleBurst(e.group.position, e.baseColorHex, 20, 18);
+            if (e.type === 'hazard_mine') {
+              scene.remove(e.group);
+              disposeGroupGeometries(e.group);
+              sim.lockedTargetIds = sim.lockedTargetIds.filter(
+                (id) => id !== e.id,
+              );
+              enemies.splice(i, 1);
+            } else {
+              // Combat craft bank away & reposition to the far trench after a ramming pass so required mission kills are never lost
+              e.group.position.z = -108 - (i % 4) * 7;
+              e.spawnTime = sim.stageElapsed;
+              e.isFiringWindup = false;
+              (e.telegraphRing.material as THREE.MeshBasicMaterial).opacity = 0;
+            }
+            continue;
+          }
+
+          // When passing behind camera (z > 14): hazard mines despawn; combat ships execute an abyssal turn-around & reposition!
+          if (e.group.position.z > 14) {
+            if (
+              activeMission.objectiveType === 'protect_beacon' &&
+              e.type !== 'hazard_mine'
+            ) {
+              const beaconDmg = e.type === 'cruiser' ? 14 : 8;
+              sim.beaconIntegrityPct = Math.max(
+                0,
+                sim.beaconIntegrityPct - beaconDmg,
+              );
+              if (sim.beaconIntegrityPct <= 0) {
+                soundEngine.playImpact(true);
+                finalizeSortie(false);
+                syncHudSnapshot('game_over');
+              }
+            }
+
+            if (e.type === 'hazard_mine') {
+              scene.remove(e.group);
+              disposeGroupGeometries(e.group);
+              sim.lockedTargetIds = sim.lockedTargetIds.filter(
+                (id) => id !== e.id,
+              );
+              enemies.splice(i, 1);
+            } else {
+              // Reposition combat craft to far engagement zone with preserved HP & ID
+              e.aiState = 'reposition';
+              e.group.position.z = -106 - (i % 5) * 6.5;
+              e.baseX = THREE.MathUtils.clamp(
+                (Math.random() - 0.5) * 22,
+                -13.5,
+                13.5,
+              );
+              e.baseY = THREE.MathUtils.clamp(
+                (Math.random() - 0.5) * 11,
+                -6.5,
+                6.5,
+              );
+              e.group.position.x = e.baseX;
+              e.group.position.y = e.baseY;
+              e.isFiringWindup = false;
+              (e.telegraphRing.material as THREE.MeshBasicMaterial).opacity = 0;
+              e.fireTimer = 1.9 + (i % 3) * 0.6;
+              e.group.updateMatrixWorld();
+            }
+          }
+        }
+
+        sim.sonarHazardsCount = scannedHazardCounter;
+        sim.hazardWarningText = anyEnemyTelegraphing
+          ? 'INCOMING BIO-PLASMA — TAP EVADE TO DODGE'
+          : null;
+
+        // =====================================================================
+        // STEP 4: UPDATE LEVIATHAN BOSS & APPENDAGE WORLD POSITIONS
+        // =====================================================================
+        if (bossObj && bossObj.active) {
+          if (sim.bossIntroTimer > 0) {
+            sim.bossIntroTimer = Math.max(0, sim.bossIntroTimer - dt);
+          }
+          if (sim.bossVulnerableTimer > 0) {
+            sim.bossVulnerableTimer = Math.max(0, sim.bossVulnerableTimer - dt);
+          }
+
+          if (sim.sonarActiveTimer > 0) {
+            const currentWeakInvalid =
+              !sim.sonarWeakPointSlot ||
+              (sim.sonarWeakPointSlot !== 'core' &&
+                bossObj.appendages.some(
+                  (a) => a.slot === sim.sonarWeakPointSlot && a.destroyed,
+                ));
+            if (currentWeakInvalid) {
+              sim.sonarWeakPointSlot = pickBestBossSonarWeakPoint();
+            }
+          }
+
+          // Approach into arena z = -52
+          bossObj.group.position.z = THREE.MathUtils.damp(
+            bossObj.group.position.z,
+            -52,
+            2.2,
+            dt,
+          );
+          const hpRatio = bossObj.hp / bossObj.maxHp;
+          const nextPhase: 1 | 2 | 3 =
+            hpRatio > 0.66 ? 1 : hpRatio > 0.33 ? 2 : 3;
+          if (nextPhase > bossObj.phase) {
+            bossObj.phase = nextPhase;
+            sim.bossVulnerableTimer = 3.2;
+            bossObj.telegraphLabel = `PHASE ${nextPhase} ESCALATION — CORE THERMAL VENT EXPOSED!`;
+            soundEngine.playBossTelegraph();
+            spawnParticleBurst(bossObj.group.position, 0xfbbf24, 30, 22);
+          }
+
+          const ventralSevered = bossObj.appendages.some(
+            (a) => a.slot === 'ventral' && a.destroyed,
+          );
+          const dorsalSevered = bossObj.appendages.some(
+            (a) => a.slot === 'dorsal' && a.destroyed,
+          );
+          const portSevered = bossObj.appendages.some(
+            (a) => a.slot === 'port' && a.destroyed,
+          );
+          const starboardSevered = bossObj.appendages.some(
+            (a) => a.slot === 'starboard' && a.destroyed,
+          );
+
+          const moveSpeed =
+            (0.75 + bossObj.phase * 0.35) *
+            (ventralSevered ? 0.65 : 1.0) *
+            (sim.bossVulnerableTimer > 0 ? 0.55 : 1.0);
+          bossObj.group.position.x =
+            Math.sin(elapsed * moveSpeed) * (9 + bossObj.phase * 2.5);
+          bossObj.group.position.y =
+            1.5 + Math.cos(elapsed * moveSpeed * 1.3) * 4.8;
+          bossObj.group.updateMatrixWorld(true);
+
+          bossObj.outerRing.rotation.z += dt * (0.9 + bossObj.phase * 0.45);
+          bossObj.tentacles.forEach((t, idx) => {
+            t.rotation.x = Math.sin(elapsed * 3.2 + idx) * 0.18;
+          });
+
+          const coreHpRatio = bossObj.hp / Math.max(1, bossObj.maxHp);
+          const coreDmgRatio = Math.max(0, 1 - coreHpRatio);
+          const coreCritPulse =
+            coreHpRatio <= 0.45 || sim.bossVulnerableTimer > 0
+              ? 0.5 +
+                0.5 * Math.sin(elapsed * (coreHpRatio <= 0.22 ? 18.0 : 11.5))
+              : 0;
+          bossObj.coreDamageUniforms.uTime.value = elapsed;
+          bossObj.coreDamageUniforms.uDamageRatio.value = coreDmgRatio;
+          bossObj.coreDamageUniforms.uCriticalPulse.value = coreCritPulse;
+
+          bossObj.fluidDripTimer += dt;
+          const emitFluidBurst = bossObj.fluidDripTimer >= 0.18;
+          if (emitFluidBurst) {
+            bossObj.fluidDripTimer = 0;
+          }
+
+          bossObj.appendages.forEach((app) => {
+            app.worldPos
+              .copy(app.localOffset)
+              .applyMatrix4(bossObj!.group.matrixWorld);
+
+            const appHpRatio = app.hp / Math.max(1, app.maxHp);
+            const appDmgRatio = app.destroyed
+              ? 1.0
+              : Math.max(0, 1.0 - appHpRatio);
+            const isCrit = !app.destroyed && appHpRatio <= 0.45;
+            const critPulse = isCrit
+              ? 0.5 +
+                0.5 * Math.sin(elapsed * (appHpRatio <= 0.22 ? 18.0 : 11.5))
+              : 0.0;
+
+            app.damageUniforms.uTime.value = elapsed;
+            app.damageUniforms.uDamageRatio.value = appDmgRatio;
+            app.damageUniforms.uCriticalPulse.value = critPulse;
+
+            app.fluidLeakUniforms.uTime.value = elapsed;
+            app.fluidLeakUniforms.uDamageRatio.value = app.destroyed
+              ? 0.42
+              : appDmgRatio;
+            app.fluidLeakUniforms.uCriticalPulse.value = critPulse;
+            app.fluidLeakMesh.visible = appDmgRatio > 0.04;
+
+            if (emitFluidBurst && !app.destroyed && appDmgRatio > 0.22) {
+              spawnParticleBurst(
+                app.worldPos,
+                app.baseColorHex,
+                isCrit ? 4 : 2,
+                7,
+              );
+            }
+
+            if (!app.destroyed) {
+              app.group.scale.lerp(_scale.set(1, 1, 1), dt * 10);
+              const isSonarTarget =
+                sim.sonarActiveTimer > 0 && sim.sonarWeakPointSlot === app.slot;
+
+              if (app.hitFlashTimer > 0) {
+                app.hitFlashTimer -= dt;
+              } else if (isSonarTarget) {
+                app.emissiveMat.color.setHex(0x22d3ee);
+                app.emissiveMat.emissive.setHex(0x22d3ee);
+                app.emissiveMat.emissiveIntensity =
+                  2.6 + Math.sin(elapsed * 12) * 0.6 + critPulse * 0.85;
+              } else {
+                const targetHex = isCrit ? 0xf59e0b : app.baseColorHex;
+                app.emissiveMat.color.setHex(targetHex);
+                app.emissiveMat.emissive.setHex(targetHex);
+                app.emissiveMat.emissiveIntensity = 1.85 + critPulse * 1.65;
+              }
+            }
+          });
+
+          // Position 3D Sonar Weak-Point Beacon Ring on active weak point
+          if (sim.sonarActiveTimer > 0 && sim.sonarWeakPointSlot) {
+            if (sim.sonarWeakPointSlot === 'core') {
+              sonarBeaconRing.position.copy(bossObj.group.position);
+              sonarBeaconRing.visible = true;
+            } else {
+              const targetApp = bossObj.appendages.find(
+                (a) => a.slot === sim.sonarWeakPointSlot && !a.destroyed,
+              );
+              if (targetApp) {
+                sonarBeaconRing.position.copy(targetApp.worldPos);
+                sonarBeaconRing.visible = true;
+              } else {
+                sonarBeaconRing.visible = false;
+              }
+            }
+            const pulseScale = 1 + Math.sin(elapsed * 10) * 0.14;
+            sonarBeaconRing.scale.set(pulseScale, pulseScale, 1);
+            sonarBeaconRing.rotation.z += dt * 3.2;
+          } else {
+            sonarBeaconRing.visible = false;
+          }
+
+          if (bossObj.hitFlashTimer > 0) {
+            bossObj.hitFlashTimer -= dt;
+            if (bossObj.hitFlashTimer <= 0) {
+              const baseHex =
+                bossObj.stageId === 1
+                  ? 0x06b6d4
+                  : bossObj.stageId === 2
+                    ? 0xf59e0b
+                    : 0x10b981;
+              (
+                bossObj.coreMesh.material as THREE.MeshStandardMaterial
+              ).color.setHex(baseHex);
+            }
+          }
+
+          // Boss Telegraph -> Multi-Pattern Barrage + Core Vulnerability Window FSM
+          bossObj.attackTimer -=
+            dt * (dorsalSevered ? 0.72 : 1.0) * telegraphSpeedMult;
+          if (bossObj.attackTimer <= 1.25 && bossObj.telegraphTimer <= 0) {
+            bossObj.telegraphTimer = 1.25;
+            bossObj.attackPatternIndex = (bossObj.attackPatternIndex + 1) % 3;
+            bossObj.telegraphLabel =
+              bossObj.phase === 3
+                ? 'CRITICAL TELEGRAPH: HADAL NOVA SPIRAL BARRAGE!'
+                : bossObj.attackPatternIndex === 1
+                  ? 'TELEGRAPH: LEVIATHAN GUIDED BIO-TORPEDO SALVO'
+                  : 'TELEGRAPH: LEVIATHAN BIO-PLASMA FAN';
+            soundEngine.playBossTelegraph();
+          }
+
+          const haloMat = bossObj.telegraphHalo
+            .material as THREE.MeshBasicMaterial;
+          if (bossObj.telegraphTimer > 0) {
+            bossObj.telegraphTimer -= dt * telegraphSpeedMult;
+            haloMat.opacity = 0.85;
+            const hs = 0.6 + bossObj.telegraphTimer * 0.65;
+            bossObj.telegraphHalo.scale.set(hs, hs, 1);
+
+            if (bossObj.telegraphTimer <= 0) {
+              haloMat.opacity = 0;
+              // Open a 2.4s core vulnerability window immediately after the boss discharges its heavy barrage
+              sim.bossVulnerableTimer = 2.4;
+              bossObj.telegraphLabel =
+                'CORE VENT OVERHEATED — STRIKE WEAK POINTS NOW!';
+              bossObj.attackTimer = Math.max(2.2, 3.8 - bossObj.phase * 0.5);
+
+              const reduction =
+                (portSevered ? 1 : 0) + (starboardSevered ? 1 : 0);
+              const volleyCount = Math.max(
+                2,
+                3 + bossObj.phase * 2 - reduction * 2,
+              );
+
+              if (bossObj.attackPatternIndex === 1) {
+                // Pattern B: Guided Leviathan Bio-Torpedo Salvo + flanking plasma
+                for (let v = 0; v < Math.min(3, volleyCount); v++) {
+                  const sideOffset = (v - 1) * 3.8;
+                  _vec3A.copy(bossObj.group.position);
+                  _vec3A.x += sideOffset;
+                  _vec3B
+                    .subVectors(vanguard.group.position, _vec3A)
+                    .normalize()
+                    .multiplyScalar(34 + bossObj.phase * 3);
+                  fireEnemyPlasma(_vec3A, false, _vec3B, {
+                    damage: 20,
+                    radius: 0.68,
+                    scale: 1.38,
+                    isGuided: true,
+                  });
+                }
+              } else {
+                // Pattern A / C: Multi-bolt fan & spiral ring barrage
+                for (let v = 0; v < volleyCount; v++) {
+                  const spreadAngle =
+                    ((v / Math.max(1, volleyCount - 1)) - 0.5) * 0.58;
+                  _vec3B
+                    .subVectors(
+                      vanguard.group.position,
+                      bossObj.group.position,
+                    )
+                    .normalize();
+                  _vec3B.x += spreadAngle;
+                  _vec3B.y +=
+                    bossObj.phase === 3
+                      ? Math.sin((v / volleyCount) * Math.PI * 2) * 0.22
+                      : ((v % 2) - 0.5) * 0.16;
+                  _vec3B.normalize().multiplyScalar(45 + bossObj.phase * 4);
+                  fireEnemyPlasma(bossObj.group.position, false, _vec3B, {
+                    damage: 16 + bossObj.phase * 2,
+                    radius: 0.52,
+                    scale: 1.15,
+                  });
+                }
+              }
+            }
+          } else {
+            haloMat.opacity = 0;
+            if (sim.bossVulnerableTimer <= 0 && sim.bossIntroTimer <= 0) {
+              bossObj.telegraphLabel = null;
+            }
+          }
+        } else {
+          sonarBeaconRing.visible = false;
+        }
+
+        // =====================================================================
+        // STEP 5: AUTHORITATIVE 3D AIMING SOLVER (PRIORITY: LOCK -> RAY -> CONVERGENCE)
+        // =====================================================================
+        const aimColliders: AimableColliderTarget[] = [];
+        for (const e of enemies) {
+          if (e.active) {
+            aimColliders.push({
+              id: e.id,
+              label:
+                e.type === 'hazard_mine' ? 'ABYSSAL MINE' : e.type.toUpperCase(),
+              worldPos: e.group.position,
+              radius: e.radius,
+              active: true,
+              isWeakPoint:
+                sim.sonarActiveTimer > 0 &&
+                (e.type === 'hazard_mine' || e.isFiringWindup),
+            });
+          }
+        }
+        if (bossObj && bossObj.active) {
+          for (const app of bossObj.appendages) {
+            if (!app.destroyed) {
+              aimColliders.push({
+                id: app.numericId,
+                label: app.name.toUpperCase(),
+                worldPos: app.worldPos,
+                radius: app.hitRadius,
+                active: true,
+                isAppendage: true,
+                appendageSlot: app.slot,
+                isWeakPoint:
+                  sim.sonarActiveTimer > 0 &&
+                  sim.sonarWeakPointSlot === app.slot,
+              });
+            }
+          }
+          aimColliders.push({
+            id: bossObj.id,
+            label: STAGE_CONFIGS[sim.stageId].bossName.toUpperCase(),
+            worldPos: bossObj.group.position,
+            radius: 5.6,
+            active: true,
+            isBoss: true,
+            isWeakPoint:
+              (sim.sonarActiveTimer > 0 && sim.sonarWeakPointSlot === 'core') ||
+              sim.bossVulnerableTimer > 0,
+          });
+        }
+
+        // Prune any stale lock IDs whose target is no longer active
+        const validIdsSet = new Set(aimColliders.map((c) => c.id));
+        const beforeLocks = sim.lockedTargetIds.length;
+        sim.lockedTargetIds = sim.lockedTargetIds.filter((id) =>
+          validIdsSet.has(id),
+        );
+        if (beforeLocks > 0 && sim.lockedTargetIds.length === 0) {
+          sim.targetLostTimer = 0.55;
+        }
+
+        const aimResult = computeAuthoritativeAimState(
+          camera,
+          sim.aimX,
+          sim.aimY,
+          aimColliders,
+          sim.lockedTargetIds,
+          sim.targetLostTimer > 0,
+          85,
+        );
+        sim.aimPointWorld.copy(aimResult.aimPointWorld);
+        sim.activeAimTargetId = aimResult.resolvedTargetId;
+        sim.activeAimTargetLabel = aimResult.resolvedTargetLabel;
+        sim.reticleState =
+          aimResult.reticleState === 'free' && sim.targetLostTimer > 0
+            ? 'target_lost'
+            : aimResult.reticleState;
+
+        // =====================================================================
+        // STEP 6: WEAPON FIRING & AUTONOMOUS DRONE / TURRET VOLLEYS
+        // =====================================================================
         // Update Trench Warden 2 Live 3D Orbiting Drones (Repair & Attack)
         if (
           sim.activeAbilityId === 'guardian_swarm' &&
@@ -3940,11 +5343,14 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                   p.active = true;
                   p.isPlayer = true;
                   p.isTorpedo = false;
+                  p.isGuidedEnemyTorpedo = false;
                   p.pos.copy(attackDroneGroup.position);
+                  p.prevPos.copy(attackDroneGroup.position);
                   _vec3B.subVectors(tgtPos, p.pos).normalize();
                   p.vel.copy(_vec3B).multiplyScalar(sim.shipPrimarySpeed * 1.05);
+                  p.radius = 0.78;
                   p.damage = Math.round(18 * sim.shipPrimaryDmgMult);
-                  p.life = 1.6;
+                  p.life = 1.8;
                   p.targetEnemyId = null;
                   p.mesh.position.copy(p.pos);
                   p.mesh.lookAt(tgtPos);
@@ -3978,15 +5384,17 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                     p.active = true;
                     p.isPlayer = true;
                     p.isTorpedo = false;
-                    p.pos.set(
-                      vanguard.group.position.x + tx,
-                      vanguard.group.position.y + 0.35,
-                      vanguard.group.position.z - 0.6,
-                    );
+                    p.isGuidedEnemyTorpedo = false;
+                    _vec3A
+                      .set(tx, 0.35, -0.6)
+                      .applyMatrix4(vanguard.group.matrixWorld);
+                    p.pos.copy(_vec3A);
+                    p.prevPos.copy(_vec3A);
                     _vec3B.subVectors(targetPos, p.pos).normalize();
                     p.vel.copy(_vec3B).multiplyScalar(sim.shipPrimarySpeed);
+                    p.radius = 0.78;
                     p.damage = Math.round(16 * sim.shipPrimaryDmgMult);
-                    p.life = 1.6;
+                    p.life = 1.8;
                     p.targetEnemyId = null;
                     p.mesh.position.copy(p.pos);
                     p.mesh.lookAt(targetPos);
@@ -4124,410 +5532,9 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             Math.max(0.5, sim.shipPrimaryFireRateMult * overdriveCadence);
         }
 
-        // Camera Choreography (Chase Cam vs Cockpit View + Decaying Trauma Shake)
-        if (sim.cameraShake > 0) {
-          sim.cameraShake = Math.max(0, sim.cameraShake - dt * 2.8);
-        }
-        const shakeOffsetX =
-          (Math.random() - 0.5) * sim.cameraShake * 0.85;
-        const shakeOffsetY =
-          (Math.random() - 0.5) * sim.cameraShake * 0.85;
-
-        if (cameraModeRef.current === 'cockpit') {
-          vanguard.group.visible = false;
-          camera.position.set(
-            sim.playerX + shakeOffsetX * 0.4,
-            sim.playerY + 0.55 + shakeOffsetY * 0.4,
-            -1.1,
-          );
-          camera.lookAt(
-            sim.playerX + sim.aimX * 16,
-            sim.playerY + sim.aimY * 11,
-            -45,
-          );
-          camera.fov = THREE.MathUtils.damp(
-            camera.fov,
-            sim.barrelRollTimer > 0 ? 74 : 68,
-            8,
-            dt,
-          );
-          camera.updateProjectionMatrix();
-        } else {
-          vanguard.group.visible = true;
-          const desiredCamX = sim.playerX * 0.62 + shakeOffsetX;
-          const desiredCamY = sim.playerY * 0.56 + 3.1 + shakeOffsetY;
-          const desiredCamZ = sim.barrelRollTimer > 0 ? 11.8 : 13.4;
-
-          camera.position.x = THREE.MathUtils.damp(
-            camera.position.x,
-            desiredCamX,
-            8,
-            dt,
-          );
-          camera.position.y = THREE.MathUtils.damp(
-            camera.position.y,
-            desiredCamY,
-            8,
-            dt,
-          );
-          camera.position.z = THREE.MathUtils.damp(
-            camera.position.z,
-            desiredCamZ,
-            8,
-            dt,
-          );
-          camera.lookAt(
-            sim.playerX * 0.78 + sim.aimX * 4.5,
-            sim.playerY * 0.75 + sim.aimY * 3.0 + 0.6,
-            -30,
-          );
-          camera.fov = THREE.MathUtils.damp(
-            camera.fov,
-            sim.barrelRollTimer > 0 ? 69 : 62,
-            8,
-            dt,
-          );
-          camera.updateProjectionMatrix();
-        }
-
-        // Update Enemies & Windup Telegraphs
-        let anyEnemyTelegraphing = false;
-        let scannedHazardCounter = 0;
-        for (let i = enemies.length - 1; i >= 0; i--) {
-          const e = enemies[i];
-          if (!e.active) continue;
-
-          if (
-            sim.sonarActiveTimer > 0 &&
-            (e.type === 'hazard_mine' || e.isFiringWindup)
-          ) {
-            scannedHazardCounter++;
-          }
-
-          const age = sim.stageElapsed - e.spawnTime;
-          e.group.position.z += e.velZ * dt;
-
-          if (e.type === 'skimmer') {
-            e.group.position.x =
-              e.baseX + Math.sin(age * 2.6 + e.patternPhase) * 4.5;
-            e.group.position.y =
-              e.baseY + Math.cos(age * 2.1 + e.patternPhase) * 2.8;
-            e.group.rotation.z = Math.cos(age * 2.6 + e.patternPhase) * 0.35;
-          } else if (e.type === 'jelly') {
-            e.group.position.y =
-              e.baseY + Math.sin(age * 3.2 + e.patternPhase) * 3.2;
-            e.group.rotation.y += dt * 1.4;
-          } else if (e.type === 'manta') {
-            e.group.position.x =
-              e.baseX + Math.cos(age * 3.4 + e.patternPhase) * 6.5;
-            e.group.rotation.z = -Math.sin(age * 3.4 + e.patternPhase) * 0.48;
-          } else if (e.type === 'hazard_mine') {
-            e.group.rotation.x += dt * 1.2;
-            e.group.rotation.y += dt * 1.6;
-          }
-
-          // Hit flash recovery
-          if (e.hitFlashTimer > 0) {
-            e.hitFlashTimer -= dt;
-            if (e.hitFlashTimer <= 0) {
-              (e.coreMesh.material as THREE.MeshStandardMaterial).color.setHex(
-                e.baseColorHex,
-              );
-            }
-          }
-
-          // Enemy Windup Telegraph -> Strike FSM
-          if (e.type !== 'hazard_mine' && e.group.position.z < -12) {
-            e.fireTimer -= dt * telegraphSpeedMult;
-            if (e.fireTimer <= 1.0 && !e.isFiringWindup) {
-              e.isFiringWindup = true;
-              e.telegraphTimer = 1.0;
-            }
-            if (e.isFiringWindup) {
-              anyEnemyTelegraphing = true;
-              e.telegraphTimer -= dt * telegraphSpeedMult;
-              const ringMat = e.telegraphRing
-                .material as THREE.MeshBasicMaterial;
-              ringMat.opacity = 0.85;
-              const s = 0.5 + Math.max(0, e.telegraphTimer) * 1.1;
-              e.telegraphRing.scale.set(s, s, 1);
-              e.telegraphRing.lookAt(camera.position);
-
-              if (e.telegraphTimer <= 0) {
-                e.isFiringWindup = false;
-                ringMat.opacity = 0;
-                e.fireTimer = e.type === 'cruiser' ? 2.4 : 3.4;
-                fireEnemyPlasma(e.group.position, true);
-              }
-            }
-          }
-
-          // Check collision with player ship
-          if (
-            e.group.position.distanceTo(vanguard.group.position) <
-            e.radius + 1.8
-          ) {
-            damagePlayer(e.type === 'hazard_mine' ? 28 : 22);
-            spawnParticleBurst(e.group.position, e.baseColorHex, 20, 18);
-            scene.remove(e.group);
-            disposeGroupGeometries(e.group);
-            sim.lockedTargetIds = sim.lockedTargetIds.filter(
-              (id) => id !== e.id,
-            );
-            enemies.splice(i, 1);
-            continue;
-          }
-
-          // Despawn if behind camera (and damage relay beacon on protect_beacon missions)
-          if (e.group.position.z > 14) {
-            if (
-              activeMission.objectiveType === 'protect_beacon' &&
-              e.type !== 'hazard_mine'
-            ) {
-              const beaconDmg = e.type === 'cruiser' ? 18 : 10;
-              sim.beaconIntegrityPct = Math.max(
-                0,
-                sim.beaconIntegrityPct - beaconDmg,
-              );
-              if (sim.beaconIntegrityPct <= 0) {
-                soundEngine.playImpact(true);
-                finalizeSortie(false);
-                syncHudSnapshot('game_over');
-              }
-            }
-            scene.remove(e.group);
-            disposeGroupGeometries(e.group);
-            sim.lockedTargetIds = sim.lockedTargetIds.filter(
-              (id) => id !== e.id,
-            );
-            enemies.splice(i, 1);
-          }
-        }
-
-        sim.sonarHazardsCount = scannedHazardCounter;
-        sim.hazardWarningText = anyEnemyTelegraphing
-          ? 'INCOMING BIO-PLASMA — TAP EVADE TO DODGE'
-          : null;
-
-        // Update Stage Leviathan Boss & Localized Appendages
-        if (bossObj && bossObj.active) {
-          // Ensure Tactical Sonar weak point stays valid if boss spawned or part was severed
-          if (sim.sonarActiveTimer > 0) {
-            const currentWeakInvalid =
-              !sim.sonarWeakPointSlot ||
-              (sim.sonarWeakPointSlot !== 'core' &&
-                bossObj.appendages.some(
-                  (a) => a.slot === sim.sonarWeakPointSlot && a.destroyed,
-                ));
-            if (currentWeakInvalid) {
-              sim.sonarWeakPointSlot = pickBestBossSonarWeakPoint();
-            }
-          }
-
-          // Approach into arena z = -52
-          bossObj.group.position.z = THREE.MathUtils.damp(
-            bossObj.group.position.z,
-            -52,
-            2.2,
-            dt,
-          );
-          const hpRatio = bossObj.hp / bossObj.maxHp;
-          bossObj.phase = hpRatio > 0.66 ? 1 : hpRatio > 0.33 ? 2 : 3;
-
-          // Ventral appendage destruction slows boss mobility by 35%
-          const ventralSevered = bossObj.appendages.some(
-            (a) => a.slot === 'ventral' && a.destroyed,
-          );
-          const dorsalSevered = bossObj.appendages.some(
-            (a) => a.slot === 'dorsal' && a.destroyed,
-          );
-          const portSevered = bossObj.appendages.some(
-            (a) => a.slot === 'port' && a.destroyed,
-          );
-          const starboardSevered = bossObj.appendages.some(
-            (a) => a.slot === 'starboard' && a.destroyed,
-          );
-
-          const moveSpeed =
-            (0.75 + bossObj.phase * 0.35) * (ventralSevered ? 0.65 : 1.0);
-          bossObj.group.position.x =
-            Math.sin(elapsed * moveSpeed) * (9 + bossObj.phase * 2.5);
-          bossObj.group.position.y =
-            1.5 + Math.cos(elapsed * moveSpeed * 1.3) * 4.8;
-
-          bossObj.outerRing.rotation.z += dt * (0.9 + bossObj.phase * 0.45);
-          bossObj.tentacles.forEach((t, idx) => {
-            t.rotation.x = Math.sin(elapsed * 3.2 + idx) * 0.18;
-          });
-
-          // Update core procedural bioluminescent damage shader uniforms
-          const coreHpRatio = bossObj.hp / Math.max(1, bossObj.maxHp);
-          const coreDmgRatio = Math.max(0, 1 - coreHpRatio);
-          const coreCritPulse =
-            coreHpRatio <= 0.45
-              ? 0.5 +
-                0.5 * Math.sin(elapsed * (coreHpRatio <= 0.22 ? 18.0 : 11.5))
-              : 0;
-          bossObj.coreDamageUniforms.uTime.value = elapsed;
-          bossObj.coreDamageUniforms.uDamageRatio.value = coreDmgRatio;
-          bossObj.coreDamageUniforms.uCriticalPulse.value = coreCritPulse;
-
-          bossObj.fluidDripTimer += dt;
-          const emitFluidBurst = bossObj.fluidDripTimer >= 0.18;
-          if (emitFluidBurst) {
-            bossObj.fluidDripTimer = 0;
-          }
-
-          // Update localized appendage world positions, hit flashes, sonar highlights, and procedural bioluminescent fluid-leak shaders
-          bossObj.appendages.forEach((app) => {
-            app.worldPos
-              .copy(bossObj!.group.position)
-              .add(app.localOffset);
-
-            const appHpRatio = app.hp / Math.max(1, app.maxHp);
-            const appDmgRatio = app.destroyed
-              ? 1.0
-              : Math.max(0, 1.0 - appHpRatio);
-            const isCrit = !app.destroyed && appHpRatio <= 0.45;
-            const critPulse = isCrit
-              ? 0.5 +
-                0.5 * Math.sin(elapsed * (appHpRatio <= 0.22 ? 18.0 : 11.5))
-              : 0.0;
-
-            app.damageUniforms.uTime.value = elapsed;
-            app.damageUniforms.uDamageRatio.value = appDmgRatio;
-            app.damageUniforms.uCriticalPulse.value = critPulse;
-
-            app.fluidLeakUniforms.uTime.value = elapsed;
-            app.fluidLeakUniforms.uDamageRatio.value = app.destroyed
-              ? 0.42
-              : appDmgRatio;
-            app.fluidLeakUniforms.uCriticalPulse.value = critPulse;
-            app.fluidLeakMesh.visible = appDmgRatio > 0.04;
-
-            if (emitFluidBurst && !app.destroyed && appDmgRatio > 0.22) {
-              spawnParticleBurst(
-                app.worldPos,
-                app.baseColorHex,
-                isCrit ? 4 : 2,
-                7,
-              );
-            }
-
-            if (!app.destroyed) {
-              app.group.scale.lerp(_scale.set(1, 1, 1), dt * 10);
-              const isSonarTarget =
-                sim.sonarActiveTimer > 0 && sim.sonarWeakPointSlot === app.slot;
-
-              if (app.hitFlashTimer > 0) {
-                app.hitFlashTimer -= dt;
-              } else if (isSonarTarget) {
-                app.emissiveMat.color.setHex(0x22d3ee);
-                app.emissiveMat.emissive.setHex(0x22d3ee);
-                app.emissiveMat.emissiveIntensity =
-                  2.6 + Math.sin(elapsed * 12) * 0.6 + critPulse * 0.85;
-              } else {
-                const targetHex = isCrit ? 0xf59e0b : app.baseColorHex;
-                app.emissiveMat.color.setHex(targetHex);
-                app.emissiveMat.emissive.setHex(targetHex);
-                app.emissiveMat.emissiveIntensity = 1.85 + critPulse * 1.65;
-              }
-            }
-          });
-
-          // Position 3D Sonar Weak-Point Beacon Ring on active weak point
-          if (sim.sonarActiveTimer > 0 && sim.sonarWeakPointSlot) {
-            if (sim.sonarWeakPointSlot === 'core') {
-              sonarBeaconRing.position.copy(bossObj.group.position);
-              sonarBeaconRing.visible = true;
-            } else {
-              const targetApp = bossObj.appendages.find(
-                (a) => a.slot === sim.sonarWeakPointSlot && !a.destroyed,
-              );
-              if (targetApp) {
-                sonarBeaconRing.position.copy(targetApp.worldPos);
-                sonarBeaconRing.visible = true;
-              } else {
-                sonarBeaconRing.visible = false;
-              }
-            }
-            const pulseScale = 1 + Math.sin(elapsed * 10) * 0.14;
-            sonarBeaconRing.scale.set(pulseScale, pulseScale, 1);
-            sonarBeaconRing.rotation.z += dt * 3.2;
-          } else {
-            sonarBeaconRing.visible = false;
-          }
-
-          if (bossObj.hitFlashTimer > 0) {
-            bossObj.hitFlashTimer -= dt;
-            if (bossObj.hitFlashTimer <= 0) {
-              const baseHex =
-                bossObj.stageId === 1
-                  ? 0x06b6d4
-                  : bossObj.stageId === 2
-                    ? 0xf59e0b
-                    : 0x10b981;
-              (
-                bossObj.coreMesh.material as THREE.MeshStandardMaterial
-              ).color.setHex(baseHex);
-            }
-          }
-
-          // Boss Telegraph -> Multi-Bolt Barrage FSM
-          bossObj.attackTimer -=
-            dt * (dorsalSevered ? 0.72 : 1.0) * telegraphSpeedMult;
-          if (bossObj.attackTimer <= 1.25 && bossObj.telegraphTimer <= 0) {
-            bossObj.telegraphTimer = 1.25;
-            bossObj.telegraphLabel =
-              bossObj.phase === 3
-                ? 'CRITICAL TELEGRAPH: HADAL NOVA BARRAGE!'
-                : 'TELEGRAPH: LEVIATHAN BIO-PLASMA SALVO';
-            soundEngine.playBossTelegraph();
-          }
-
-          const haloMat = bossObj.telegraphHalo
-            .material as THREE.MeshBasicMaterial;
-          if (bossObj.telegraphTimer > 0) {
-            bossObj.telegraphTimer -= dt * telegraphSpeedMult;
-            haloMat.opacity = 0.85;
-            const hs = 0.6 + bossObj.telegraphTimer * 0.65;
-            bossObj.telegraphHalo.scale.set(hs, hs, 1);
-
-            if (bossObj.telegraphTimer <= 0) {
-              haloMat.opacity = 0;
-              bossObj.telegraphLabel = null;
-              bossObj.attackTimer = Math.max(2.1, 3.8 - bossObj.phase * 0.55);
-
-              // Fire patterned spread toward player (reduced when Port/Starboard appendages are severed!)
-              const reduction =
-                (portSevered ? 1 : 0) + (starboardSevered ? 1 : 0);
-              const volleyCount = Math.max(
-                2,
-                3 + bossObj.phase * 2 - reduction * 2,
-              );
-              for (let v = 0; v < volleyCount; v++) {
-                const spreadAngle =
-                  ((v / Math.max(1, volleyCount - 1)) - 0.5) * 0.55;
-                _vec3B
-                  .subVectors(
-                    vanguard.group.position,
-                    bossObj.group.position,
-                  )
-                  .normalize();
-                _vec3B.x += spreadAngle;
-                _vec3B.y += ((v % 2) - 0.5) * 0.16;
-                _vec3B.normalize().multiplyScalar(46 + bossObj.phase * 4);
-                fireEnemyPlasma(bossObj.group.position, false, _vec3B);
-              }
-            }
-          } else {
-            haloMat.opacity = 0;
-          }
-        } else {
-          sonarBeaconRing.visible = false;
-        }
-
-        // Update Projectiles & Check Collisions
+        // =====================================================================
+        // STEP 7: SWEPT PROJECTILE MOVEMENT & ANALYTICAL HITBOX COLLISION
+        // =====================================================================
         for (let i = 0; i < PROJECTILE_POOL_SIZE; i++) {
           const p = projectiles[i];
           if (!p.active) continue;
@@ -4539,8 +5546,8 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             continue;
           }
 
-          // Homing torpedo guidance (supports Enemies, Boss Appendages, and Boss Core)
-          if (p.isTorpedo && p.targetEnemyId !== null) {
+          // Homing guidance for player torpedoes
+          if (p.isPlayer && p.isTorpedo && p.targetEnemyId !== null) {
             let targetPos: THREE.Vector3 | null = null;
             const foundEnemy = enemies.find(
               (e) => e.active && e.id === p.targetEnemyId,
@@ -4562,25 +5569,39 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                 .subVectors(targetPos, p.pos)
                 .normalize()
                 .multiplyScalar(sim.shipSecondarySpeed);
-              p.vel.lerp(_vec3B, dt * 7.5);
+              p.vel.lerp(_vec3B, dt * 8.2);
             }
+          } else if (!p.isPlayer && p.isGuidedEnemyTorpedo && p.pos.z < -4) {
+            // Subtle tracking on enemy cruiser/boss guided bio-torpedoes (dodgeable with barrel roll or strafing)
+            _vec3B
+              .subVectors(vanguard.group.position, p.pos)
+              .normalize()
+              .multiplyScalar(p.vel.length());
+            p.vel.lerp(_vec3B, dt * 1.95);
           }
 
+          // Record previous position BEFORE advancing so swept segment [prevPos, pos] is exact
+          p.prevPos.copy(p.pos);
           p.pos.addScaledVector(p.vel, dt);
           p.mesh.position.copy(p.pos);
 
-          if (p.isPlayer && p.isTorpedo) {
+          if (p.isPlayer) {
             _vec3A.copy(p.pos).add(p.vel);
             p.mesh.lookAt(_vec3A);
-            if (Math.random() < 0.35) {
+            if (p.isTorpedo && Math.random() < 0.35) {
               spawnParticleBurst(p.pos, 0xff6b00, 1, 6);
             }
-          }
-
-          if (!p.isPlayer) {
+          } else {
             p.mesh.rotation.x += dt * 5;
             p.mesh.rotation.y += dt * 5;
-            if (p.pos.distanceTo(vanguard.group.position) < 1.95) {
+            const playerHit = checkSweptSphereHit(
+              p.prevPos,
+              p.pos,
+              p.radius,
+              vanguard.group.position,
+              1.65,
+            );
+            if (playerHit.hit) {
               p.active = false;
               p.mesh.visible = false;
               damagePlayer(p.damage);
@@ -4588,14 +5609,20 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             continue;
           }
 
-          // Player projectile vs Enemies
+          // 1. Player projectile vs Enemies (Swept Segment-Sphere Collision)
           let hitRegistered = false;
           for (let j = enemies.length - 1; j >= 0; j--) {
             const e = enemies[j];
-            if (
-              e.active &&
-              p.pos.distanceTo(e.group.position) < e.radius + 1.15
-            ) {
+            if (!e.active) continue;
+
+            const sweptHit = checkSweptSphereHit(
+              p.prevPos,
+              p.pos,
+              p.radius,
+              e.group.position,
+              e.radius + 0.55,
+            );
+            if (sweptHit.hit) {
               p.active = false;
               p.mesh.visible = false;
               hitRegistered = true;
@@ -4621,21 +5648,24 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                 e.type === 'cruiser'
                   ? 1.25
                   : 1.0;
-              e.hp -=
+              const totalDmg =
                 p.damage *
                 hazardSonarBonus *
                 resonanceMult *
                 predatorMult *
                 breakerCruiserMult;
+              e.hp -= totalDmg;
               e.hitFlashTimer = 0.08;
+              if (e.type === 'skimmer' || e.type === 'manta') {
+                e.evadeTimer = 0.65;
+              }
               (
                 e.coreMesh.material as THREE.MeshStandardMaterial
               ).color.setHex(0xffffff);
-              // Squash & stretch recoil
               e.group.scale.set(1.18, 0.84, 1.18);
 
               spawnParticleBurst(
-                p.pos,
+                sweptHit.hitPoint,
                 p.isTorpedo ? 0xf59e0b : 0x06b6d4,
                 p.isTorpedo ? 20 : 8,
                 15,
@@ -4643,88 +5673,37 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
               soundEngine.playImpact(p.isTorpedo);
 
               if (e.hp <= 0) {
-                e.active = false;
-                scene.remove(e.group);
-                disposeGroupGeometries(e.group);
-                sim.lockedTargetIds = sim.lockedTargetIds.filter(
-                  (id) => id !== e.id,
+                eliminateDefeatedEnemy(e, j, p.isTorpedo);
+              } else {
+                triggerHitConfirmation(
+                  predatorMult > 1 || hazardSonarBonus > 1 || p.isTorpedo
+                    ? 'crit'
+                    : e.type === 'cruiser'
+                      ? 'armor'
+                      : 'normal',
+                  e.type.toUpperCase(),
                 );
-                spawnParticleBurst(e.group.position, e.baseColorHex, 26, 22);
-                if (Math.random() < 0.28) {
-                  spawnPickup(e.group.position);
-                }
-                enemies.splice(j, 1);
-
-                sim.enemiesDefeated++;
-                if (e.type === 'cruiser' || e.type === 'manta') {
-                  sim.elitesDefeated++;
-                  playerSave.stats.totalElitesDefeated += 1;
-                }
-                playerSave.stats.totalEnemiesDefeated += 1;
-                playerSave.dailyProgress._daily_hostiles =
-                  (playerSave.dailyProgress._daily_hostiles || 0) + 1;
-                if (playerSave.dailyProgress._daily_hostiles >= 15) {
-                  playerSave.dailyProgress.daily_appendage_1 = Math.max(
-                    1,
-                    playerSave.dailyProgress.daily_appendage_1 || 0,
-                  );
-                }
-
-                sim.combo++;
-                sim.comboTimer = 4.5;
-                sim.multiplier = Math.min(8, 1 + Math.floor(sim.combo / 3));
-                if (sim.multiplier > sim.maxMultiplierReached) {
-                  sim.maxMultiplierReached = sim.multiplier;
-                }
-                sim.score +=
-                  (e.type === 'cruiser' ? 350 : 150) * sim.multiplier;
-
-                const siphonMult = sim.upgrades.includes('biolume_siphon_array')
-                  ? 1 + 0.35 * getModuleTierMult('biolume_siphon_array')
-                  : 1.0;
-                const sovereignYield =
-                  sim.activeShipId === 'abyssal_sovereign' ? 1.2 : 1.0;
-                playerSave.salvageCredits += Math.round(
-                  (e.type === 'cruiser' ? 45 : 22) * siphonMult * sovereignYield,
-                );
-                if (sim.upgrades.includes('biolume_siphon_array')) {
-                  sim.shield = Math.min(sim.maxShield, sim.shield + 4);
-                }
-                if (sim.activeShipId === 'abyssal_talon') {
-                  sim.shield = Math.min(sim.maxShield, sim.shield + 6);
-                }
-                persistSave();
-
-                if (p.isTorpedo) {
-                  sim.hitstopTimer = 0.04;
-                  sim.cameraShake = Math.min(
-                    1,
-                    sim.cameraShake +
-                      0.3 * (playerSave.settings.cameraShakeIntensity / 100),
-                  );
-                }
               }
               break;
             }
           }
 
-          // Recover enemy squash-and-stretch
-          enemies.forEach((e) => {
-            e.group.scale.lerp(_scale.set(1, 1, 1), dt * 12);
-          });
-
-          // Player projectile vs Boss Localized Appendages & Central Core
+          // 2. Player projectile vs Boss Localized Appendages (Checked BEFORE Core!) & Central Core
           if (!hitRegistered && bossObj && bossObj.active) {
             const visorMult = sim.upgrades.includes('sonar_crit_visor')
               ? 1 + 0.45 * getModuleTierMult('sonar_crit_visor')
               : 1.0;
 
-            // 1. Check localized appendages first
             for (const app of bossObj.appendages) {
-              if (
-                !app.destroyed &&
-                p.pos.distanceTo(app.worldPos) < app.hitRadius
-              ) {
+              if (app.destroyed) continue;
+              const appHit = checkSweptSphereHit(
+                p.prevPos,
+                p.pos,
+                p.radius,
+                app.worldPos,
+                app.hitRadius + 0.4,
+              );
+              if (appHit.hit) {
                 p.active = false;
                 p.mesh.visible = false;
                 hitRegistered = true;
@@ -4770,7 +5749,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                 app.group.scale.set(1.2, 0.84, 1.2);
 
                 spawnParticleBurst(
-                  p.pos,
+                  appHit.hitPoint,
                   isSonarWeakPointHit
                     ? 0x22d3ee
                     : p.isTorpedo
@@ -4781,150 +5760,137 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
                 );
 
                 if (app.hp <= 0) {
-                  // APPENDAGE SEVERED!
-                  app.destroyed = true;
-                  app.hp = 0;
-                  bossObj.lastSeveredPartName = app.name;
-                  sim.appendagesSeveredThisSortie += 1;
-                  playerSave.stats.totalAppendagesSevered += 1;
-                  playerSave.dailyProgress.daily_appendage_1 =
-                    (playerSave.dailyProgress.daily_appendage_1 || 0) + 1;
-
-                  sim.lockedTargetIds = sim.lockedTargetIds.filter(
-                    (id) => id !== app.numericId,
-                  );
-
-                  // Visually fracture & char the 3D appendage sub-assembly
-                  app.group.scale.set(0.32, 0.32, 0.32);
-                  app.emissiveMat.color.setHex(0x1f1924);
-                  app.emissiveMat.emissive.setHex(0x4c1d3d);
-                  app.emissiveMat.emissiveIntensity = 0.45;
-
-                  spawnParticleBurst(app.worldPos, 0xf43f5e, 34, 24);
-                  spawnParticleBurst(app.worldPos, app.baseColorHex, 28, 20);
-                  soundEngine.playAppendageBreak();
-                  triggerHaptic([35, 25, 45]);
-
-                  if (sim.sonarWeakPointSlot === app.slot) {
-                    sim.sonarWeakPointSlot = pickBestBossSonarWeakPoint();
-                  }
-
-                  sim.hitstopTimer = 0.065;
-                  sim.cameraShake = Math.min(
-                    1,
-                    sim.cameraShake +
-                      0.72 * (playerSave.settings.cameraShakeIntensity / 100),
-                  );
-                  sim.combo += 2;
-                  sim.comboTimer = 5.0;
-                  sim.multiplier = Math.min(8, 1 + Math.floor(sim.combo / 3));
-                  if (sim.multiplier > sim.maxMultiplierReached) {
-                    sim.maxMultiplierReached = sim.multiplier;
-                  }
-                  sim.score += 1200 * sim.multiplier;
-                  playerSave.salvageCredits += 180;
-                  persistSave();
-                  syncHudSnapshot();
+                  severDefeatedAppendage(app);
                 } else {
+                  triggerHitConfirmation('crit', app.slot.toUpperCase());
                   soundEngine.playImpact(p.isTorpedo || isSonarWeakPointHit);
                 }
                 break;
               }
             }
 
-            // 2. Check Central Leviathan Core
-            if (
-              !hitRegistered &&
-              p.pos.distanceTo(bossObj.group.position) < 5.6
-            ) {
-              p.active = false;
-              p.mesh.visible = false;
-              hitRegistered = true;
-              sim.shotsHit++;
-
-              const severedCount = bossObj.appendages.filter(
-                (a) => a.destroyed,
-              ).length;
-              const severedVulnerabilityMult = 1.0 + severedCount * 0.2;
-              const coreSonarMult =
-                sim.sonarActiveTimer > 0 && sim.sonarWeakPointSlot === 'core'
-                  ? sim.activeShipId === 'echo_tactical'
-                    ? 1.6 * 1.18
-                    : 1.6
-                  : 1.0;
-              const coreSeismicMult =
-                sim.activeAbilityId === 'seismic_lock' &&
-                sim.activeAbilityTimer > 0
-                  ? 1.35
-                  : 1.0;
-              const coreResonanceMult =
-                sim.activeAbilityId === 'resonance_scan' &&
-                sim.activeAbilityTimer > 0
-                  ? 1.1
-                  : 1.0;
-              bossObj.hp -=
-                p.damage *
-                visorMult *
-                severedVulnerabilityMult *
-                coreSonarMult *
-                coreSeismicMult *
-                coreResonanceMult;
-              bossObj.hitFlashTimer = 0.08;
-              (
-                bossObj.coreMesh.material as THREE.MeshStandardMaterial
-              ).color.setHex(0xffffff);
-
-              spawnParticleBurst(
+            // Check Central Leviathan Core
+            if (!hitRegistered && bossObj && bossObj.active) {
+              const coreHit = checkSweptSphereHit(
+                p.prevPos,
                 p.pos,
-                p.isTorpedo ? 0xf59e0b : 0x10b981,
-                p.isTorpedo ? 24 : 10,
-                18,
+                p.radius,
+                bossObj.group.position,
+                5.6,
               );
-              soundEngine.playImpact(p.isTorpedo);
+              if (coreHit.hit) {
+                p.active = false;
+                p.mesh.visible = false;
+                hitRegistered = true;
+                sim.shotsHit++;
 
-              if (bossObj.hp <= 0) {
-                bossObj.active = false;
-                sonarBeaconRing.visible = false;
+                const severedCount = bossObj.appendages.filter(
+                  (a) => a.destroyed,
+                ).length;
+                // Armored carapace dampens direct core damage when all 4 appendages are intact and core is not in a thermal vulnerability window
+                const carapaceArmorMult =
+                  severedCount === 0 && sim.bossVulnerableTimer <= 0
+                    ? 0.58
+                    : 1.0 +
+                      severedCount * 0.22 +
+                      (sim.bossVulnerableTimer > 0 ? 0.35 : 0);
+                const coreSonarMult =
+                  sim.sonarActiveTimer > 0 && sim.sonarWeakPointSlot === 'core'
+                    ? sim.activeShipId === 'echo_tactical'
+                      ? 1.6 * 1.18
+                      : 1.6
+                    : 1.0;
+                const coreSeismicMult =
+                  sim.activeAbilityId === 'seismic_lock' &&
+                  sim.activeAbilityTimer > 0
+                    ? 1.35
+                    : 1.0;
+                const coreResonanceMult =
+                  sim.activeAbilityId === 'resonance_scan' &&
+                  sim.activeAbilityTimer > 0
+                    ? 1.1
+                    : 1.0;
+                bossObj.hp -=
+                  p.damage *
+                  visorMult *
+                  carapaceArmorMult *
+                  coreSonarMult *
+                  coreSeismicMult *
+                  coreResonanceMult;
+                bossObj.hitFlashTimer = 0.08;
+                (
+                  bossObj.coreMesh.material as THREE.MeshStandardMaterial
+                ).color.setHex(0xffffff);
+
                 spawnParticleBurst(
-                  bossObj.group.position,
-                  0x06b6d4,
-                  45,
-                  28,
+                  coreHit.hitPoint,
+                  p.isTorpedo ? 0xf59e0b : 0x10b981,
+                  p.isTorpedo ? 24 : 10,
+                  18,
                 );
-                spawnParticleBurst(
-                  bossObj.group.position,
-                  0xf59e0b,
-                  45,
-                  24,
-                );
-                scene.remove(bossObj.group);
-                disposeGroupGeometries(bossObj.group);
-                bossObj = null;
+                soundEngine.playImpact(p.isTorpedo);
 
-                sim.hitstopTimer = 0.075;
-                sim.cameraShake =
-                  0.9 * (playerSave.settings.cameraShakeIntensity / 100);
-                sim.score += 2500 * sim.stageId * sim.multiplier;
-                playerSave.stats.totalBossesDefeated += 1;
-                finalizeSortie(true);
-                soundEngine.playStageClearFanfare();
+                if (bossObj.hp <= 0) {
+                  bossObj.active = false;
+                  sim.bossDefeated = true;
+                  sonarBeaconRing.visible = false;
+                  triggerHitConfirmation(
+                    'kill',
+                    `${STAGE_CONFIGS[sim.stageId].bossName.toUpperCase()} VANQUISHED!`,
+                  );
+                  spawnParticleBurst(
+                    bossObj.group.position,
+                    0x06b6d4,
+                    45,
+                    28,
+                  );
+                  spawnParticleBurst(
+                    bossObj.group.position,
+                    0xf59e0b,
+                    45,
+                    24,
+                  );
+                  scene.remove(bossObj.group);
+                  disposeGroupGeometries(bossObj.group);
+                  bossObj = null;
 
-                if (sim.stageId < 3) {
-                  syncHudSnapshot('stage_clear');
+                  sim.hitstopTimer = 0.075;
+                  sim.cameraShake =
+                    0.9 * (playerSave.settings.cameraShakeIntensity / 100);
+                  sim.score += 2500 * sim.stageId * sim.multiplier;
+                  playerSave.stats.totalBossesDefeated += 1;
                 } else {
-                  syncHudSnapshot('victory');
+                  triggerHitConfirmation(
+                    severedCount === 0 && sim.bossVulnerableTimer <= 0
+                      ? 'armor'
+                      : 'crit',
+                    severedCount === 0 && sim.bossVulnerableTimer <= 0
+                      ? 'ARMORED CORE'
+                      : 'EXPOSED CORE',
+                  );
                 }
               }
             }
           }
         }
 
+        // Recover enemy squash-and-stretch once per frame
+        enemies.forEach((e) => {
+          if (e.active) {
+            const targetScale =
+              e.isElite && e.type !== 'cruiser' ? 1.16 : 1.0;
+            e.group.scale.lerp(
+              _scale.set(targetScale, targetScale, targetScale),
+              dt * 12,
+            );
+          }
+        });
+
         // Update Pickups
         for (let i = 0; i < PICKUP_POOL_SIZE; i++) {
           const pk = pickups[i];
           if (!pk.active) continue;
           pk.pos.z += 22 * dt;
-          // Gently magnetize toward player when close
           const magnetDist = sim.activeShipId === 'trench_warden' ? 15 : 12;
           if (pk.pos.distanceTo(vanguard.group.position) < magnetDist) {
             pk.pos.lerp(vanguard.group.position, dt * 6.5);
@@ -4947,6 +5913,71 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
             pk.active = false;
             pk.mesh.visible = false;
           }
+        }
+
+        // =====================================================================
+        // STEP 8: UPDATE 3D AIM DEBUG VISUALIZER & PROJECT 2D SCREEN LOCKS
+        // =====================================================================
+        if (playerSave.settings.aimDebugEnabled) {
+          aimDebugGroup.visible = true;
+          updateLineEndpoints(
+            debugRayLine,
+            aimResult.rayOrigin,
+            sim.aimPointWorld,
+          );
+          debugAimSphere.position.copy(sim.aimPointWorld);
+
+          const muzzles = vanguard.getPrimaryMuzzleOffsets();
+          const debugShots = computeMuzzleShotVectors(
+            vanguard.group,
+            muzzles,
+            sim.aimPointWorld,
+            sim.shipPrimarySpeed,
+            playerSave.equippedPrimaryWeapon,
+            sim.shotSequenceCount,
+          );
+          for (let m = 0; m < 4; m++) {
+            if (m < debugShots.length) {
+              debugMuzzleSpheres[m].visible = true;
+              debugMuzzleSpheres[m].position.copy(debugShots[m].muzzleWorldPos);
+              debugMuzzleLines[m].visible = true;
+              updateLineEndpoints(
+                debugMuzzleLines[m],
+                debugShots[m].muzzleWorldPos,
+                debugShots[m].aimTargetPoint,
+              );
+            } else {
+              debugMuzzleSpheres[m].visible = false;
+              debugMuzzleLines[m].visible = false;
+            }
+          }
+
+          let vIdx = 0;
+          for (let i = 0; i < 66 && vIdx < debugVelLines.length; i++) {
+            const p = projectiles[i];
+            if (p.active && p.isPlayer) {
+              debugVelLines[vIdx].visible = true;
+              _vec3A.copy(p.pos).addScaledVector(p.vel, 0.14);
+              updateLineEndpoints(debugVelLines[vIdx], p.pos, _vec3A);
+              vIdx++;
+            }
+          }
+          for (; vIdx < debugVelLines.length; vIdx++) {
+            debugVelLines[vIdx].visible = false;
+          }
+
+          for (let h = 0; h < debugHitboxSpheres.length; h++) {
+            if (h < aimColliders.length) {
+              const col = aimColliders[h];
+              debugHitboxSpheres[h].visible = true;
+              debugHitboxSpheres[h].position.copy(col.worldPos);
+              debugHitboxSpheres[h].scale.setScalar(col.radius);
+            } else {
+              debugHitboxSpheres[h].visible = false;
+            }
+          }
+        } else {
+          aimDebugGroup.visible = false;
         }
 
         // Project 3D Enemy & Boss World Coordinates to 2D Screen Space & Auto-Lock Reticle Proximity
@@ -5050,7 +6081,8 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
           });
 
           const isCoreWeakPoint =
-            sim.sonarActiveTimer > 0 && sim.sonarWeakPointSlot === 'core';
+            (sim.sonarActiveTimer > 0 && sim.sonarWeakPointSlot === 'core') ||
+            sim.bossVulnerableTimer > 0;
           projectEntity(
             bossObj.id,
             bossObj.group.position,
@@ -5093,6 +6125,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       domCanvas.removeEventListener('pointermove', handlePointerMove);
       domCanvas.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('pointerup', handlePointerUp);
