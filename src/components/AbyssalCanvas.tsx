@@ -3974,7 +3974,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         let targetShipY = -0.05 + idleBob;
         let targetShipScale = 1.28;
         let targetShipYaw =
-          -0.38 + Math.sin(elapsed * 0.45) * 0.14 + hangarUserYaw + sim.aimX * 0.16;
+          -0.38 + Math.sin(elapsed * 0.16) * 0.14 + hangarUserYaw + sim.aimX * 0.16;
 
         let targetCamX = 0.25 + sim.aimX * 0.32;
         let targetCamY = 1.05 + hangarUserPitch * 1.6 + sim.aimY * 0.18;
@@ -3992,13 +3992,13 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
         if (currentMode === 'title') {
           targetShipX = 0;
-          targetShipScale = isPortraitViewport ? 1.15 : 1.28;
+          targetShipScale = isPortraitViewport ? 0.82 : 0.88;
           targetCamX = 0.25 + sim.aimX * 0.32;
           targetCamY =
             (isPortraitViewport ? 1.28 : 1.05) +
             hangarUserPitch * 1.6 +
             sim.aimY * 0.18;
-          targetCamZ = (isPortraitViewport ? 5.95 : 5.45) * hangarZoom;
+          targetCamZ = (isPortraitViewport ? 8.6 : 9.4) * hangarZoom;
           targetCamX += Math.sin(elapsed * 0.14) * 0.24;
           targetCamY += Math.sin(elapsed * 0.12) * 0.1;
           targetLookY = isPortraitViewport ? -0.22 : -0.05;
