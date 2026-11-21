@@ -262,8 +262,8 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       const notice = document.createElement('div');
       notice.setAttribute('role', 'status');
       notice.setAttribute('aria-live', 'polite');
-      notice.textContent = 'The 3D hangar needs WebGL. Enable hardware acceleration or open this game in a WebGL-capable browser.';
-      notice.style.cssText = 'position:absolute;inset:18% 16% auto;z-index:1;padding:1rem 1.25rem;border:1px solid rgba(103,232,249,.3);border-radius:1rem;background:rgba(3,11,28,.82);color:#cffafe;text-align:center;font:500 14px/1.5 system-ui,sans-serif;backdrop-filter:blur(12px)';
+      notice.className = 'hangar-webgl-status';
+      notice.textContent = 'WebGL is unavailable. Showing the animated hangar preview.';
       container.replaceChildren(notice);
       return;
     }
