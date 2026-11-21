@@ -156,6 +156,73 @@
   animation: panelEnterFade 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+[data-webgl-unavailable="true"] {
+  isolation: isolate;
+  background: #020b18;
+}
+
+[data-webgl-unavailable="true"]::before,
+[data-webgl-unavailable="true"]::after {
+  position: absolute;
+  inset: -4%;
+  z-index: 0;
+  pointer-events: none;
+  content: "";
+}
+
+[data-webgl-unavailable="true"]::before {
+  background-image:
+    linear-gradient(180deg, rgba(2, 10, 26, 0.04), rgba(2, 10, 26, 0.18)),
+    url("https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-JmjU0QhBd3dRBSgEKLafCTPpRguSVc.png");
+  background-position: center;
+  background-size: cover;
+  filter: saturate(1.12) contrast(1.04);
+  animation: hangarFallbackDrift 28s ease-in-out infinite alternate;
+}
+
+[data-webgl-unavailable="true"]::after {
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(3, 12, 27, 0.12), transparent 20%, transparent 72%, rgba(2, 8, 20, 0.52)),
+    radial-gradient(ellipse at 50% 42%, transparent 32%, rgba(2, 9, 22, 0.24) 100%),
+    repeating-linear-gradient(0deg, rgba(91, 205, 255, 0.025) 0 1px, transparent 1px 4px);
+  animation: hangarWaterlight 7s ease-in-out infinite alternate;
+}
+
+.hangar-webgl-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes hangarFallbackDrift {
+  from {
+    transform: scale(1.07) translate3d(0.8%, 0.2%, 0);
+  }
+  to {
+    transform: scale(1.13) translate3d(-0.8%, -0.3%, 0);
+  }
+}
+
+@keyframes hangarWaterlight {
+  from {
+    opacity: 0.48;
+  }
+  to {
+    opacity: 0.82;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-webgl-unavailable="true"]::before,
+  [data-webgl-unavailable="true"]::after {
+    animation: none;
+  }
+}
+
 .reduced-motion *,
 .reduced-motion *::before,
 .reduced-motion *::after {

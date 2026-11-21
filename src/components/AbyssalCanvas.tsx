@@ -59,6 +59,7 @@ import {
   createVanguardShip,
 } from '../game/models';
 import { soundEngine } from '../game/audio';
+import { createHangarLife } from '../game/hangarLife';
 import {
   AimableColliderTarget,
   checkSweptSphereHit,
@@ -235,7 +236,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     const container = canvasMountRef.current;
     if (!container) return;
 
-    // 1. Software WebGL Guard (SwiftShader, llvmpipe, softpipe, Basic Render)
+    // 1. Detect software WebGL so the renderer can use a lower-cost path.
     const isSoftwareGl = (() => {
       const probeCanvas = document.createElement('canvas');
       const gl = probeCanvas.getContext('webgl2');
@@ -246,12 +247,6 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       gl.getExtension('WEBGL_lose_context')?.loseContext();
       return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
     })();
-
-    if (isSoftwareGl) {
-      container.dataset.webglUnavailable = 'true';
-      container.style.display = 'none';
-      return;
-    }
 
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
@@ -264,7 +259,12 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       });
     } catch {
       container.dataset.webglUnavailable = 'true';
-      container.style.display = 'none';
+      const notice = document.createElement('div');
+      notice.setAttribute('role', 'status');
+      notice.setAttribute('aria-live', 'polite');
+      notice.className = 'hangar-webgl-status';
+      notice.textContent = 'WebGL is unavailable. Showing the animated hangar preview.';
+      container.replaceChildren(notice);
       return;
     }
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -411,6 +411,8 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       arch.position.set(0, -3.5, gz);
       hangarBerthGroup.add(arch);
     });
+
+    const hangarLife = createHangarLife(scene, mats, vanguard.group);
 
     // 5. InstancedMesh Trench Environment: Canyon Pillars & Bioluminescent Coral Spires
     const PILLAR_COUNT = 72;
@@ -3740,6 +3742,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
     const clock = new THREE.Clock();
     let frameId = 0;
     let hudSyncAccumulator = 0;
+    let sceneElapsed = 0;
 
     function afterDraw(cb: () => void) {
       const gl = renderer.getContext() as WebGL2RenderingContext;
@@ -3768,10 +3771,19 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
       }
       lastFrameRenderTime = nowMs;
 
+      if (document.hidden) {
+        clock.getDelta();
+        frameId = requestAnimationFrame(tick);
+        return;
+      }
+
       const rawDt = clock.getDelta();
       const dt = Math.min(rawDt, 0.05);
-      const elapsed = clock.getElapsedTime();
+      sceneElapsed += dt;
+      const elapsed = sceneElapsed;
       const currentMode = modeRef.current;
+      const isLobbyMode = currentMode !== 'playing' && currentMode !== 'paused';
+      hangarLife.update(elapsed, dt, isLobbyMode);
 
       // Hitstop pause for impactful heavy hits
       if (sim.hitstopTimer > 0) {
@@ -3962,7 +3974,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         let targetShipY = -0.05 + idleBob;
         let targetShipScale = 1.28;
         let targetShipYaw =
-          -0.38 + Math.sin(elapsed * 0.45) * 0.14 + hangarUserYaw + sim.aimX * 0.16;
+          -0.38 + Math.sin(elapsed * 0.16) * 0.14 + hangarUserYaw + sim.aimX * 0.16;
 
         let targetCamX = 0.25 + sim.aimX * 0.32;
         let targetCamY = 1.05 + hangarUserPitch * 1.6 + sim.aimY * 0.18;
@@ -3980,13 +3992,15 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
 
         if (currentMode === 'title') {
           targetShipX = 0;
-          targetShipScale = isPortraitViewport ? 1.15 : 1.28;
+          targetShipScale = isPortraitViewport ? 0.82 : 0.88;
           targetCamX = 0.25 + sim.aimX * 0.32;
           targetCamY =
             (isPortraitViewport ? 1.28 : 1.05) +
             hangarUserPitch * 1.6 +
             sim.aimY * 0.18;
-          targetCamZ = (isPortraitViewport ? 5.95 : 5.45) * hangarZoom;
+          targetCamZ = (isPortraitViewport ? 8.6 : 9.4) * hangarZoom;
+          targetCamX += Math.sin(elapsed * 0.14) * 0.24;
+          targetCamY += Math.sin(elapsed * 0.12) * 0.1;
           targetLookY = isPortraitViewport ? -0.22 : -0.05;
         } else if (currentMode === 'hangar') {
           targetShipX = isCenteredMobileOrInspect ? 0 : -0.95;
@@ -6150,6 +6164,7 @@ export const AbyssalCanvas: React.FC<AbyssalCanvasProps> = ({
         handleHangarCameraEvent,
       );
       window.removeEventListener('resize', handleResize);
+      hangarLife.dispose();
       renderer.dispose();
     };
   }, []);
