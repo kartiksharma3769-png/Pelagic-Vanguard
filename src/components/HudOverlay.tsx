@@ -865,40 +865,10 @@ export const HudOverlay: React.FC<HudOverlayProps> = ({
         onTriggerShipAbility={onTriggerShipAbility}
       />
 
-      {/* Image-matched command hangar with accessible, functional hotspots. */}
-      {hud.mode === 'title' && effectiveModal === 'none' && (
-        <section className="pointer-events-auto absolute inset-0 z-10 overflow-hidden bg-[#03101f]" aria-label="Pelagic Vanguard hangar lobby">
-          <img
-            src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-UJh3kObvwkVZTKIIzTqaKd3HtNyZI3.png"
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 h-full w-full scale-105 object-cover blur-xl opacity-60"
-            draggable={false}
-          />
-          <div className="absolute left-0 top-1/2 aspect-[1171/320] w-full -translate-y-1/2">
-            <img
-              src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-UJh3kObvwkVZTKIIzTqaKd3HtNyZI3.png"
-              alt="An underwater spacecraft hangar with a central navy vessel, surrounding fleet, glass dome, and command controls."
-              className="absolute inset-0 h-full w-full"
-              draggable={false}
-            />
-          <button aria-label="Pilot profile" onClick={() => openHubSection('profile')} className="absolute left-0 top-0 h-[20%] w-[18%] rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" />
-          <button aria-label="Open hangar and ship loadout" onClick={() => openHubSection('hangar')} className="absolute left-0 top-[25%] h-[14%] w-[11%] rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" />
-          <button aria-label="Open missions" onClick={() => openHubSection('missions')} className="absolute left-0 top-[39%] h-[12%] w-[11%] rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" />
-          <button aria-label="Open market" onClick={() => openHubSection('market')} className="absolute left-0 top-[51%] h-[11%] w-[11%] rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" />
-          <button aria-label="Open upgrades" onClick={() => openHubSection('hangar')} className="absolute left-0 top-[62%] h-[11%] w-[11%] rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" />
-          <button aria-label="Open settings" onClick={() => openHubSection('settings')} className="absolute left-0 top-[73%] h-[11%] w-[11%] rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" />
-          <button aria-label="View featured mission" onClick={() => openHubSection('missions')} className="absolute right-0 top-[15%] h-[30%] w-[14%] rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" />
-          <button aria-label="Launch mission" onClick={() => handleLaunchWithTransition(activeMission.id)} className="absolute bottom-0 right-0 h-[17%] w-[18%] rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-300" />
-          <button aria-label="Open resource market" onClick={() => openHubSection('market')} className="absolute right-[14%] top-0 h-[13%] w-[19%] rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" />
-          </div>
-        </section>
-      )}
-
       {/* =====================================================================
        * 2. MOBILE-NATIVE HOME BERTH LOBBY (mode === 'title')
        * ==================================================================== */}
-      {false && hud.mode === 'title' && effectiveModal === 'none' && (
+      {hud.mode === 'title' && effectiveModal === 'none' && (
         <>
           {/* Slim Mobile Game Top Status Bar */}
           <header className="pointer-events-auto relative z-30 flex items-center justify-between gap-2 bg-gradient-to-b from-slate-950/90 via-slate-950/55 to-transparent px-3 sm:px-5 py-2 pt-safe px-safe">
