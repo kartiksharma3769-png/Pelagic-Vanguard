@@ -100,19 +100,6 @@ export function createHangarLife(
   mats: MaterialBank,
   shipModel: THREE.Group,
 ): HangarLife {
-  const root = new THREE.Group();
-  root.name = 'animated-hangar-life';
-  scene.add(root);
-
-  const dockedShips = [-1, 1].map((side, index) => {
-    const ship = shipModel.clone(true);
-    ship.name = `docked-vanguard-escort-${index + 1}`;
-    ship.scale.setScalar(0.38);
-    ship.position.set(side * 7.3, -1.15, -1.8 - index * 1.1);
-    root.add(ship);
-    return { ship, side, phase: index * Math.PI };
-  });
-
   const ownedGeometries: THREE.BufferGeometry[] = [];
   const ownedMaterials: THREE.Material[] = [];
   const registerGeometry = <T extends THREE.BufferGeometry>(geometry: T): T => {
@@ -123,6 +110,102 @@ export function createHangarLife(
     ownedMaterials.push(material);
     return material;
   };
+
+  const root = new THREE.Group();
+  root.name = 'animated-hangar-life';
+  scene.add(root);
+
+  const architecture = new THREE.Group();
+  architecture.name = 'submerged-glass-hangar';
+  root.add(architecture);
+
+  const domeCenter = new THREE.Vector3(0, -4, -10);
+  const domeRadius = 27;
+  const domeGlass = registerMaterial(new THREE.MeshPhysicalMaterial({
+    color: 0x1a8ac0,
+    emissive: 0x062744,
+    emissiveIntensity: 0.65,
+    roughness: 0.18,
+    metalness: 0.12,
+    transparent: true,
+    opacity: 0.045,
+    side: THREE.BackSide,
+    depthWrite: false,
+  }));
+  const dome = new THREE.Mesh(
+    registerGeometry(new THREE.SphereGeometry(domeRadius, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2)),
+    domeGlass,
+  );
+  dome.position.copy(domeCenter);
+  architecture.add(dome);
+
+  const ribMaterial = registerMaterial(new THREE.MeshStandardMaterial({
+    color: 0x183b59,
+    emissive: 0x073a62,
+    emissiveIntensity: 0.8,
+    metalness: 0.78,
+    roughness: 0.28,
+  }));
+  const ribGlowMaterial = registerMaterial(new THREE.MeshBasicMaterial({
+    color: 0x24baf4,
+    transparent: true,
+    opacity: 0.58,
+  }));
+  const domeRibs: THREE.Mesh[] = [];
+  const domeAccents: THREE.Mesh[] = [];
+  for (let ribIndex = 0; ribIndex < 10; ribIndex++) {
+    const azimuth = (ribIndex / 10) * Math.PI * 2;
+    const ribPoints = Array.from({ length: 25 }, (_, pointIndex) => {
+      const theta = (pointIndex / 24) * Math.PI * 0.5;
+      const radial = domeRadius * Math.sin(theta);
+      return new THREE.Vector3(
+        domeCenter.x + Math.sin(azimuth) * radial,
+        domeCenter.y + domeRadius * Math.cos(theta),
+        domeCenter.z + Math.cos(azimuth) * radial,
+      );
+    });
+    const ribCurve = new THREE.CatmullRomCurve3(ribPoints);
+    const rib = new THREE.Mesh(
+      registerGeometry(new THREE.TubeGeometry(ribCurve, 40, ribIndex % 2 === 0 ? 0.2 : 0.12, 6, false)),
+      ribMaterial,
+    );
+    rib.name = `dome-support-${ribIndex + 1}`;
+    architecture.add(rib);
+    domeRibs.push(rib);
+
+    if (ribIndex % 2 === 0) {
+      const accent = new THREE.Mesh(
+        registerGeometry(new THREE.TubeGeometry(ribCurve, 40, 0.028, 5, false)),
+        ribGlowMaterial,
+      );
+      accent.name = `dome-light-strip-${ribIndex + 1}`;
+      architecture.add(accent);
+      domeAccents.push(accent);
+    }
+  }
+
+  const domeRings: THREE.Mesh[] = [];
+  [0.38, 0.68, 0.91].forEach((latitude, index) => {
+    const ring = new THREE.Mesh(
+      registerGeometry(new THREE.TorusGeometry(domeRadius * latitude, index === 2 ? 0.2 : 0.11, 7, 128)),
+      ribMaterial,
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(domeCenter.x, domeCenter.y + Math.sqrt(1 - latitude * latitude) * domeRadius, domeCenter.z);
+    ring.userData.baseY = ring.position.y;
+    ring.name = `dome-crossbeam-${index + 1}`;
+    architecture.add(ring);
+    domeRings.push(ring);
+  });
+
+  const dockedShips = [-1, 1].map((side, index) => {
+    const ship = shipModel.clone(true);
+    ship.name = `docked-vanguard-escort-${index + 1}`;
+    ship.scale.setScalar(0.38);
+    ship.position.set(side * 7.3, -1.15, -1.8 - index * 1.1);
+    root.add(ship);
+    return { ship, side, phase: index * Math.PI };
+  });
 
   const fishGeo = registerGeometry(makeFishGeometry());
   const fishMat = registerMaterial(new THREE.MeshStandardMaterial({ color: 0x9cecff, emissive: 0x1686b0, emissiveIntensity: 0.65, metalness: 0.28, roughness: 0.38, side: THREE.DoubleSide }));
@@ -306,6 +389,21 @@ export function createHangarLife(
   const update = (time: number, _dt: number, visible: boolean) => {
     root.visible = visible;
     if (!visible) return;
+
+    const domePulse = (Math.sin(time * 0.42) + 1) * 0.5;
+    domeGlass.opacity = 0.035 + domePulse * 0.025;
+    ribMaterial.emissiveIntensity = 0.52 + domePulse * 0.48;
+    ribGlowMaterial.opacity = 0.3 + domePulse * 0.35;
+    domeRings.forEach((ring, index) => {
+      ring.rotation.y = Math.PI / 2 + Math.sin(time * 0.12 + index) * 0.035;
+      ring.position.y = ring.userData.baseY + Math.sin(time * 0.35 + index * 1.8) * 0.018;
+    });
+    domeRibs.forEach((rib, index) => {
+      rib.scale.setScalar(1 + Math.sin(time * 0.32 + index * 0.55) * 0.0015);
+    });
+    domeAccents.forEach((accent, index) => {
+      accent.scale.setScalar(1 + Math.sin(time * 0.8 + index) * 0.012);
+    });
 
     dockedShips.forEach(({ ship, side, phase }) => {
       ship.rotation.y = Math.PI + side * 0.12 + Math.sin(time * 0.24 + phase) * 0.08;
